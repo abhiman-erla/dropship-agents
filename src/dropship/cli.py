@@ -33,6 +33,9 @@ def make_llm_factory(conn: sqlite3.Connection, s: Settings) -> Callable[[int], L
             client = anthropic.Anthropic()
         except anthropic.AnthropicError:
             return None
+        # The SDK does not raise without credentials; it fails later at request time.
+        if not (client.api_key or client.auth_token or getattr(client, "credentials", None)):
+            return None
         return LLM(client, conn, run_id, s.daily_llm_token_budget)
 
     return factory

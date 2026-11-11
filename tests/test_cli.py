@@ -158,3 +158,31 @@ def test_bad_config_exits_2_without_traceback(tmp_path, capsys, extra):
     assert cli.main(["--config", str(_write_cfg(tmp_path, extra)), "proposals"]) == 2
     err = capsys.readouterr().err
     assert err.startswith("config error:") and "Traceback" not in err
+
+
+_CRED_ENV = [
+    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "ANTHROPIC_CONFIG_DIR",
+    "ANTHROPIC_IDENTITY_TOKEN", "ANTHROPIC_IDENTITY_TOKEN_FILE",
+    "ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID", "XDG_CONFIG_HOME",
+]
+
+
+def _isolate_credentials(tmp_path, monkeypatch):
+    for name in _CRED_ENV:
+        monkeypatch.delenv(name, raising=False)
+    for name in ("HOME", "USERPROFILE", "APPDATA"):
+        monkeypatch.setenv(name, str(tmp_path))
+
+
+def test_llm_factory_returns_none_without_credentials(tmp_path, monkeypatch):
+    # anthropic.Anthropic() does not raise without credentials; it fails at request time.
+    _isolate_credentials(tmp_path, monkeypatch)
+    conn = db.connect(tmp_path / "t.db")
+    assert cli.make_llm_factory(conn, Settings(categories=[1]))(1) is None
+
+
+def test_llm_factory_returns_llm_with_api_key(tmp_path, monkeypatch):
+    _isolate_credentials(tmp_path, monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    conn = db.connect(tmp_path / "t.db")
+    assert cli.make_llm_factory(conn, Settings(categories=[1]))(1) is not None
