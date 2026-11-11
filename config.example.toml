@@ -17,6 +17,7 @@ max_risk_score = 60
 max_order_value = 5000.0
 daily_spend_cap = 15000.0
 max_units_per_order = 20
+max_asins_per_category = 100  # best-seller lists are rank-ordered; keeps Keepa token use bounded
 db_path = "data/dropship.db"
 reports_dir = "reports"
 supplier_quotes_path = "supplier_quotes.csv"

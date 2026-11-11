@@ -53,3 +53,7 @@ def test_out_of_range_values_rejected(tmp_path, line):
 def test_malformed_toml_raises_config_error(tmp_path):
     with pytest.raises(ConfigError):
         load_config(_write(tmp_path, "categories = [1\n"))
+
+
+def test_max_asins_per_category_default(tmp_path):
+    assert load_config(_write(tmp_path, "categories = [1]\n")).max_asins_per_category == 100

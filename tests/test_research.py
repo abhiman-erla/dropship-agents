@@ -159,3 +159,13 @@ def test_zero_candidates_skips_llm(conn, tmp_path):
     result, products = run_research(keepa, LLM(client, conn, run_id, 1000), conn, run_id, s)
     assert result.status == "ok" and client.calls == [] and "B0C" in products
     assert get_candidates(conn, run_id) == []
+
+
+def test_bestsellers_truncated_per_category_before_dedup(conn, tmp_path):
+    products = {a: prod(a) for a in ["B0A", "B0B", "B0C", "B0D"]}
+    keepa = FakeKeepa({1: ["B0A", "B0B", "B0C"], 2: ["B0B", "B0D", "B0C"]}, products)
+    run_id = start_run(conn)
+    s = Settings(categories=[1, 2], supplier_quotes_path=tmp_path / "none.csv",
+                 max_asins_per_category=2)
+    run_research(keepa, None, conn, run_id, s)
+    assert keepa.requested == [["B0A", "B0B", "B0D"]]

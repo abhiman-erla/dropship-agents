@@ -31,6 +31,8 @@ class Settings(BaseModel):
     max_order_value: float = Field(5000.0, gt=0)
     daily_spend_cap: float = Field(15000.0, gt=0)
     max_units_per_order: int = Field(20, gt=0)
+    # best-seller lists are rank-ordered; keeps Keepa token use bounded
+    max_asins_per_category: int = Field(100, gt=0)
     db_path: Path = Path("data/dropship.db")
     reports_dir: Path = Path("reports")
     supplier_quotes_path: Path = Path("supplier_quotes.csv")

@@ -69,7 +69,7 @@ def run_research(
     asins: list[str] = []
     seen: set[str] = set()
     for category in s.categories:
-        for asin in keepa.bestsellers(category):
+        for asin in keepa.bestsellers(category)[: s.max_asins_per_category]:
             if asin not in seen:
                 seen.add(asin)
                 asins.append(asin)
