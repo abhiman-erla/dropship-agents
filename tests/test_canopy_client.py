@@ -107,12 +107,12 @@ def test_keepa_error_is_data_source_error():
 
 def test_us_demo_defaults(tmp_path):
     cfg = tmp_path / "config.toml"
-    cfg.write_text('categories = ["bestsellers_kitchen", 12]\n', encoding="utf-8")
+    cfg.write_text('categories = ["bestsellers_kitchen", "12"]\n', encoding="utf-8")
     s = load_config(cfg)
     assert s.data_source == "canopy" and s.canopy_domain == "US"
     assert s.price_max == 60.0 and s.price_min == 15.0
     assert s.max_order_value == 300.0 and s.daily_spend_cap == 1000.0
     assert s.keepa_domain == 1 and s.max_sales_rank == 50
     assert s.shipping_cost == 5.0 and s.max_asins_per_category == 50
-    assert s.categories == ["bestsellers_kitchen", 12]
+    assert s.categories == ["bestsellers_kitchen", "12"]
     assert Settings(categories=["a"]).categories == ["a"]

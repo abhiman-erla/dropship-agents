@@ -12,7 +12,8 @@ KEEPA_CFG = 'data_source = "keepa"\n'
 
 def _write_cfg(tmp_path: Path, extra: str = "") -> Path:
     cfg = tmp_path / "config.toml"
-    cfg.write_text(f"categories = [1]\nmax_order_value = 5000.0\ndaily_spend_cap = 15000.0\n{extra}", encoding="utf-8")
+    cats = "[1]" if KEEPA_CFG in extra else '["bestsellers_kitchen"]'
+    cfg.write_text(f"categories = {cats}\nmax_order_value = 5000.0\ndaily_spend_cap = 15000.0\n{extra}", encoding="utf-8")
     return cfg
 
 
@@ -26,7 +27,7 @@ def _seed(tmp_path: Path, total: float = 1234.5) -> None:
 
 
 def test_resolve_paths_relative_to_config_dir(tmp_path):
-    s = cli.resolve_paths(Settings(categories=[1]), tmp_path / "cfgdir" / "config.toml")
+    s = cli.resolve_paths(Settings(categories=["x"]), tmp_path / "cfgdir" / "config.toml")
     base = tmp_path / "cfgdir"
     assert s.db_path == base / "data" / "dropship.db"
     assert s.reports_dir == base / "reports"
@@ -35,7 +36,7 @@ def test_resolve_paths_relative_to_config_dir(tmp_path):
 
 def test_resolve_paths_keeps_absolute(tmp_path):
     abs_db = tmp_path / "abs.db"
-    s = cli.resolve_paths(Settings(categories=[1], db_path=abs_db), tmp_path / "config.toml")
+    s = cli.resolve_paths(Settings(categories=["x"], db_path=abs_db), tmp_path / "config.toml")
     assert s.db_path == abs_db
 
 
@@ -188,7 +189,7 @@ def test_llm_factory_returns_none_when_anthropic_unavailable(tmp_path, monkeypat
 
     monkeypatch.setattr(cli.anthropic, "Anthropic", boom)
     conn = db.connect(tmp_path / "t.db")
-    factory = cli.make_llm_factory(conn, Settings(categories=[1]))
+    factory = cli.make_llm_factory(conn, Settings(categories=["x"]))
     assert factory(1) is None
 
 
@@ -227,14 +228,14 @@ def test_llm_factory_returns_none_without_credentials(tmp_path, monkeypatch):
     # anthropic.Anthropic() does not raise without credentials; it fails at request time.
     _isolate_credentials(tmp_path, monkeypatch)
     conn = db.connect(tmp_path / "t.db")
-    assert cli.make_llm_factory(conn, Settings(categories=[1]))(1) is None
+    assert cli.make_llm_factory(conn, Settings(categories=["x"]))(1) is None
 
 
 def test_llm_factory_returns_llm_with_api_key(tmp_path, monkeypatch):
     _isolate_credentials(tmp_path, monkeypatch)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     conn = db.connect(tmp_path / "t.db")
-    assert cli.make_llm_factory(conn, Settings(categories=[1]))(1) is not None
+    assert cli.make_llm_factory(conn, Settings(categories=["x"]))(1) is not None
 
 
 def _seed_with_candidate(tmp_path, cost_source="quoted", candidate=True):

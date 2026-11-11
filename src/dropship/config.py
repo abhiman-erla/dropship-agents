@@ -4,7 +4,7 @@ import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 
 class ConfigError(Exception):
@@ -43,6 +43,21 @@ class Settings(BaseModel):
     db_path: Path = Path("data/dropship.db")
     reports_dir: Path = Path("reports")
     supplier_quotes_path: Path = Path("supplier_quotes.csv")
+
+    @model_validator(mode="after")
+    def _categories_match_source(self) -> Settings:
+        if self.data_source == "canopy":
+            bad = [c for c in self.categories if not isinstance(c, str)]
+            kind = "a string (Canopy category id)"
+        else:
+            bad = [c for c in self.categories if not isinstance(c, int) or isinstance(c, bool)]
+            kind = "an integer (Keepa category id)"
+        if bad:
+            raise ValueError(
+                f'categories: with data_source = "{self.data_source}" every category must be '
+                f"{kind}; got {', '.join(repr(c) for c in bad)}"
+            )
+        return self
 
 
 def _describe(exc: ValidationError) -> str:
