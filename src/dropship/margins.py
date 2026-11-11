@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import math
 from pathlib import Path
 
 from dropship.config import Settings
@@ -19,9 +20,11 @@ def load_supplier_quotes(path: Path) -> dict[str, float]:
             if not asin or not raw:
                 continue
             try:
-                quotes[asin] = float(raw)
+                value = float(raw)
             except ValueError:
                 continue
+            if math.isfinite(value) and value > 0:
+                quotes[asin] = value
     return quotes
 
 

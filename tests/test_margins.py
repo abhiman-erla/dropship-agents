@@ -116,3 +116,10 @@ def test_load_supplier_quotes(tmp_path: Path):
     f = tmp_path / "q.csv"
     f.write_text("asin,unit_cost\nA1,200.5\nA2,\nA3,abc\nA4, 10 \n", encoding="utf-8")
     assert load_supplier_quotes(f) == {"A1": 200.5, "A4": 10.0}
+
+
+@pytest.mark.parametrize("bad", ["nan", "inf", "-5", "0"])
+def test_load_supplier_quotes_rejects_bad_values(tmp_path: Path, bad):
+    f = tmp_path / "q.csv"
+    f.write_text(f"asin,unit_cost\nA1,{bad}\nA2,50\n", encoding="utf-8")
+    assert load_supplier_quotes(f) == {"A2": 50.0}
