@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Products{% endblock %}
+{% block content %}
+<h1>Products</h1>
+<p class="muted small">Search by title or ASIN by adding <code>?q=text</code> to the address.{% if q %} Showing matches for <strong>{{ q }}</strong> · <a href="/products">clear</a>{% endif %}</p>
+<table>
+  <tr><th>ASIN</th><th>Title</th><th>Price</th><th>Margin</th><th>AI verdict</th><th>Outcome</th><th>Last seen</th></tr>
+  {% for p in rows %}
+  <tr><td><a href="{{ p.amazon_url }}" target="_blank" rel="noopener">{{ p.asin }}</a></td><td>{{ p.title }}</td>
+      <td>{% if p.price is not none %}${{ '%.2f'|format(p.price) }}{% endif %}</td>
+      <td>{% if p.margin_pct is not none %}{{ '%.0f'|format(p.margin_pct * 100) }}%{% endif %}</td>
+      <td>{{ p.verdict or '' }}</td><td>{{ p.outcome }}</td><td><a href="/runs/{{ p.last_run_id }}">run #{{ p.last_run_id }}</a></td></tr>
+  {% else %}<tr><td colspan="7" class="muted">No products found.</td></tr>{% endfor %}
+</table>
+{% endblock %}

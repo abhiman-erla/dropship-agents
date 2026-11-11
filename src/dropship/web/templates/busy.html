@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block refresh %}3{% endblock %}
+{% block title %}Busy{% endblock %}
+{% block content %}
+<h1>Database busy</h1>
+<p>The pipeline is writing to the database. This page retries in a few seconds.</p>
+{% endblock %}

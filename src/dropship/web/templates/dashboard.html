@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+{% if d.last_run is none %}
+{% include "_empty_text.html" %}
+{% else %}
+{% set r = d.last_run %}
+<section class="card">
+  {% if r.status == 'running' %}
+  <p class="banner">Run #{{ r.id }} in progress…</p>
+  {% else %}
+  <p><strong>Last run #{{ r.id }}</strong> <span class="badge {{ r.status }}">{{ r.status }}</span>
+     <a class="small" href="/runs/{{ r.id }}">details</a></p>
+  {% endif %}
+  <p class="muted small">started {{ r.started_at }}{% if r.duration_s is not none %} · took {{ '%.1f'|format(r.duration_s) }}s{% endif %}</p>
+</section>
+<section class="tiles">
+  <div class="tile"><span class="label">Pending orders</span><span class="value">{{ d.pending_count }}</span></div>
+  <div class="tile"><span class="label">Approved today</span><span class="value">${{ '%.2f'|format(d.approved_today) }} of ${{ '%g'|format(d.daily_cap) }}</span></div>
+  <div class="tile"><span class="label">Requests this month</span><span class="value">{% if d.free_quota is not none %}{{ d.requests_this_month }} of {{ d.free_quota }} free{% else %}{{ d.requests_this_month }}{% endif %}</span></div>
+  <div class="tile"><span class="label">Claude tokens today</span><span class="value">{{ '{:,}'.format(d.tokens_today) }}</span></div>
+</section>
+<h2>Pending draft orders</h2>
+{% for o in d.pending %}{% include "_order_card.html" %}{% else %}<p class="muted">Nothing waiting for a decision.</p>{% endfor %}
+{% if d.last_errors %}
+<h2>Errors from the last run</h2>
+<table>
+  <tr><th>Stage</th><th>Type</th><th>Message</th></tr>
+  {% for e in d.last_errors %}<tr><td>{{ e.stage }}</td><td>{{ e.error_type }}</td><td>{{ e.message }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% endif %}
+{% endblock %}

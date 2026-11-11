@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Runs{% endblock %}
+{% block content %}
+<h1>Runs</h1>
+{% if runs %}
+<table>
+  <tr><th>Run</th><th>Started</th><th>Status</th><th>Fetched</th><th>Dropped</th><th>Proposals</th></tr>
+  {% for r in runs %}
+  <tr><td><a href="/runs/{{ r.id }}">#{{ r.id }}</a></td><td>{{ r.started_at }}</td>
+      <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+      <td>{{ r.fetched }}</td><td>{{ r.dropped }}</td><td>{{ r.proposed }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}
+{% include "_empty_text.html" %}
+{% endif %}
+{% endblock %}

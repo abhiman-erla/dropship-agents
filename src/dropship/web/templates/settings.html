@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<ul class="card plain">
+  {% for line in lines %}<li>{{ line }}</li>{% endfor %}
+</ul>
+<h2>Supplier quotes</h2>
+<table>
+  <tr><th>ASIN</th><th>Unit cost</th></tr>
+  {% for asin, cost in quotes %}<tr><td>{{ asin }}</td><td>${{ '%.2f'|format(cost) }}</td></tr>
+  {% else %}<tr><td colspan="2" class="muted">No quotes.</td></tr>{% endfor %}
+</table>
+<p class="muted">Edit <code>config.toml</code> / <code>supplier_quotes.csv</code> to change these.</p>
+{% endblock %}

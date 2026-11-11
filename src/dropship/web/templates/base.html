@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="{% block refresh %}30{% endblock %}">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Dropship{% endblock %} · Dropship dashboard</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <nav>
+    <a href="/" class="{{ 'on' if active == 'dashboard' }}">Dashboard</a>
+    <a href="/orders" class="{{ 'on' if active == 'orders' }}">Orders</a>
+    <a href="/runs" class="{{ 'on' if active == 'runs' }}">Runs</a>
+    <a href="/products" class="{{ 'on' if active == 'products' }}">Products</a>
+    <a href="/settings" class="{{ 'on' if active == 'settings' }}">Settings</a>
+  </nav>
+  <span class="muted small">last updated {{ updated }} · auto-refresh 30s</span>
+</header>
+<main class="container">
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>
