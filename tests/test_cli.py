@@ -371,3 +371,25 @@ def test_dashboard_renders_on_upgraded_old_db(tmp_path):
     apps = []
     assert cli._cmd_web(s, _free_port(), serve=lambda app, h, p: apps.append(app)) == 0
     assert TestClient(apps[0]).get("/").status_code == 200
+
+
+def test_web_junk_db_file_exits_1_cleanly(tmp_path, capsys, monkeypatch):
+    path = tmp_path / "data" / "dropship.db"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"this is not a sqlite database at all, just junk bytes" * 20)
+    cfg = _write_cfg(tmp_path)
+    served = []
+    monkeypatch.setattr(cli, "_serve", lambda app, host, p: served.append(p))
+    assert cli.main(["--config", str(cfg), "web", "--port", str(_free_port())]) == 1
+    err = capsys.readouterr().err
+    assert err.startswith(f"cannot open database {path}: ")
+    assert served == []
+
+
+@pytest.mark.parametrize("port", [0, 70000])
+def test_web_invalid_port_exits_2(tmp_path, capsys, monkeypatch, port):
+    served = []
+    monkeypatch.setattr(cli, "_serve", lambda app, host, p: served.append(p))
+    assert cli.main(["--config", str(_write_cfg(tmp_path)), "web", "--port", str(port)]) == 2
+    assert "port must be between 1 and 65535" in capsys.readouterr().err
+    assert served == []

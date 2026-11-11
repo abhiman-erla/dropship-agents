@@ -121,16 +121,23 @@ def _port_is_free(port: int) -> bool:
 def _cmd_web(s: Settings, port: int, serve: Callable | None = None) -> int:
     from dropship.web.app import create_app
 
+    if not 1 <= port <= 65535:
+        print("port must be between 1 and 65535", file=sys.stderr)
+        return 2
     if not _port_is_free(port):
         print(f"port {port} is busy, try --port {port + 1}", file=sys.stderr)
         return 1
     if Path(s.db_path).exists():
         # Older DBs may lack newer tables; the read-only site cannot upgrade them.
-        conn = sqlite3.connect(s.db_path)
         try:
-            db.init_schema(conn)
-        finally:
-            conn.close()
+            conn = sqlite3.connect(s.db_path)
+            try:
+                db.init_schema(conn)
+            finally:
+                conn.close()
+        except sqlite3.Error as exc:
+            print(f"cannot open database {s.db_path}: {exc}", file=sys.stderr)
+            return 1
     print(f"Dashboard: http://localhost:{port}  (Ctrl+C to stop)")
     (serve or _serve)(create_app(s), "127.0.0.1", port)
     return 0
