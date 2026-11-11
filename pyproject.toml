@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dropship"
+version = "0.1.0"
+description = "Scheduled dropshipping product research, risk and monitoring pipeline"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.14.3",
+    "anthropic>=2.8.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9.2.0"]
+
+[project.scripts]
+dropship = "dropship.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
