@@ -81,8 +81,10 @@ Exit codes: 0 success, 1 failed run or rejected approval, 2 configuration or mis
 
 ## Scheduling (Windows Task Scheduler)
 
+Replace `C:\path\to\dropship-agents` with the folder you cloned the repo into:
+
 ```
-schtasks /Create /SC DAILY /ST 08:00 /TN "dropship-run" /TR "\"G:\vscode\codes\dropship-agents\.venv\Scripts\python.exe\" -m dropship --config \"G:\vscode\codes\dropship-agents\config.toml\" run"
+schtasks /Create /SC DAILY /ST 08:00 /TN "dropship-run" /TR "\"C:\path\to\dropship-agents\.venv\Scripts\python.exe\" -m dropship --config \"C:\path\to\dropship-agents\config.toml\" run"
 ```
 
 The task needs `CANOPY_API_KEY` (or `KEEPA_API_KEY` when `data_source = "keepa"`) and
