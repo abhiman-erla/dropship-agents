@@ -26,7 +26,7 @@ Later (Option B, separate spec): a hosted version for the owner and friends with
 1. `.venv\Scripts\python -m dropship web` starts the site; the owner opens `http://localhost:8000`.
 2. After a `run`, `approve` or `reject` in PowerShell, a refresh (or the 30 s auto-refresh) shows the new state.
 3. The owner can read every draft order's notes and cost source and copy the `approve`/`reject` command, without opening a markdown file.
-4. Nothing the site does can modify the database, the config or the quotes file.
+4. Nothing the site does can modify the database, the config or the quotes file. Exception: dropship web adds missing tables (CREATE TABLE IF NOT EXISTS) to an existing database at startup; it never changes rows and never creates the file.
 
 ## Pages
 
