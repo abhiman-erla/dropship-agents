@@ -1,10 +1,10 @@
 import pytest
 
 from dropship import db
-from dropship.buyer import (ApprovalError, RecordOnlyPurchaser, RiskNote, approve, reject,
-                            run_risk)
+from dropship.buyer import (FALLBACK_NARRATIVE, ApprovalError, RecordOnlyPurchaser, RiskNote,
+                            approve, reject, run_risk)
 from dropship.config import Settings
-from dropship.llm import LLMBudgetExceeded
+from dropship.llm import LLMBudgetExceeded, LLMUnusable
 from dropship.models import Candidate, Product, Proposal
 
 S = Settings(categories=[1])
@@ -30,9 +30,9 @@ class CountingPurchaser(RecordOnlyPurchaser):
         return super().place(p)
 
 
-def cand(asin="B01", cost=1200.0, verdict="promising"):
+def cand(asin="B01", cost=1200.0, verdict="promising", score=1.0):
     return Candidate(asin=asin, title="t", sell_price=2500.0, supplier_cost=cost,
-                     cost_source="quoted", margin=1000.0, margin_pct=0.45, score=1.0,
+                     cost_source="quoted", margin=1000.0, margin_pct=0.45, score=score,
                      llm_verdict=verdict)
 
 
@@ -170,3 +170,51 @@ def test_daily_cap_counts_prior_approvals(tmp_path):
     with pytest.raises(ApprovalError, match="daily spend cap"):
         approve(conn, b, s, pur)
     assert pur.n == 1 and db.get_proposal(conn, b).status == "pending"
+
+
+def _asins(conn):
+    return sorted(p.asin for p in db.list_proposals(conn))
+
+
+def test_weak_verdict_skipped(tmp_path):
+    conn, rid = setup(tmp_path, [cand("B01", verdict="weak"), cand("B02", cost=100.0)])
+    llm = FakeLLM()
+    run_risk(llm, conn, rid, {"B01": prod(), "B02": prod("B02")}, S)
+    assert _asins(conn) == ["B02"] and len(llm.calls) == 1
+
+
+def test_unreviewed_skipped_when_verdicts_exist(tmp_path):
+    # B02 ranked beyond the LLM's top-n, so it stayed unreviewed while B01 was judged.
+    conn, rid = setup(tmp_path, [cand("B01", cost=100.0, score=2.0),
+                                 cand("B02", cost=100.0, verdict="unreviewed", score=1.0)])
+    llm = FakeLLM()
+    s = Settings(categories=[1], llm_top_n=1)
+    run_risk(llm, conn, rid, {"B01": prod(), "B02": prod("B02")}, s)
+    assert _asins(conn) == ["B01"] and len(llm.calls) == 1
+
+
+def test_all_unreviewed_falls_back_to_top_n_by_score(tmp_path):
+    cands = [cand(a, cost=100.0, verdict="unreviewed", score=sc)
+             for a, sc in [("B01", 0.1), ("B02", 0.9), ("B03", 0.5)]]
+    conn, rid = setup(tmp_path, cands)
+    s = Settings(categories=[1], llm_top_n=2)
+    run_risk(FakeLLM(), conn, rid, {c.asin: prod(c.asin) for c in cands}, s)
+    assert _asins(conn) == ["B02", "B03"]
+
+
+def test_no_llm_creates_deterministic_proposal(tmp_path):
+    conn, rid = setup(tmp_path, [cand(cost=100.0, verdict="unreviewed")])
+    r = run_risk(None, conn, rid, {"B01": prod()}, S)
+    assert r.status == "degraded" and r.error_type == "LLMUnusable"
+    [p] = db.list_proposals(conn)
+    assert p.qty == 1 and p.narrative == FALLBACK_NARRATIVE and p.status == "pending"
+
+
+def test_llm_unusable_creates_deterministic_proposal(tmp_path):
+    conn, rid = setup(tmp_path, [cand(cost=100.0)])
+    llm = FakeLLM(qty=5, exc=LLMUnusable("refused"))
+    r = run_risk(llm, conn, rid, {"B01": prod()}, S)
+    assert r.status == "degraded" and r.error_type == "LLMUnusable"
+    assert len(llm.calls) == 1
+    [p] = db.list_proposals(conn)
+    assert p.qty == 1 and p.narrative == FALLBACK_NARRATIVE and p.total == 100.0

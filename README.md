@@ -29,7 +29,8 @@ Environment variables (secrets are never stored in the DB, reports or logs):
 rating, reviews and offer count, and estimates margin from your supplier quotes (or the
 `est_cost_ratio` fallback). A cheap LLM pass then judges the top candidates.
 
-**Risk** takes the promising candidates and scores them for risk (price volatility, competition,
+**Risk** takes the candidates the LLM rated promising (or, if research ran without the LLM,
+the top `llm_top_n` by score) and scores them for risk (price volatility, competition,
 demand). An LLM adds a short narrative and a suggested quantity, which is capped by
 `max_units_per_order` and `max_order_value`. Candidates under `max_risk_score` become proposals.
 

@@ -16,7 +16,7 @@ from dropship.db import (
     set_proposal_status,
 )
 from dropship.llm import LLM, LLMBudgetExceeded, LLMUnusable
-from dropship.models import Product, Proposal, StageResult
+from dropship.models import Candidate, Product, Proposal, StageResult
 from dropship.risk import risk_score
 
 RISK_SYSTEM = (
@@ -57,6 +57,14 @@ def _fit_qty(qty: int, unit_cost: float, s: Settings) -> int:
     return qty  # 0 means even one unit does not fit
 
 
+def _best_candidates(cands: list[Candidate], s: Settings) -> list[Candidate]:
+    """The candidates worth risk-scoring: the LLM's "promising" ones or, when nothing
+    was reviewed (research degraded / no LLM), the top `llm_top_n` by score."""
+    if any(c.llm_verdict != "unreviewed" for c in cands):
+        return [c for c in cands if c.llm_verdict == "promising"]
+    return sorted(cands, key=lambda c: c.score, reverse=True)[: s.llm_top_n]
+
+
 def run_risk(
     llm: LLM | None,
     conn: sqlite3.Connection,
@@ -65,9 +73,9 @@ def run_risk(
     s: Settings,
 ) -> StageResult:
     degraded_error = ""
-    for c in get_candidates(conn, run_id):
+    for c in _best_candidates(get_candidates(conn, run_id), s):
         product = products.get(c.asin)
-        if product is None or c.llm_verdict == "avoid":
+        if product is None:
             continue
         ra = risk_score(c, product, s)
         if ra.risk_score > s.max_risk_score or has_pending_proposal(conn, c.asin):
