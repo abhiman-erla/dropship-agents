@@ -1,0 +1,143 @@
+from pathlib import Path
+
+import pytest
+
+from dropship import cli, db
+from dropship.config import Settings
+from dropship.models import Proposal
+
+
+def _write_cfg(tmp_path: Path, extra: str = "") -> Path:
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(f"categories = [1]\n{extra}", encoding="utf-8")
+    return cfg
+
+
+def _seed(tmp_path: Path, total: float = 1234.5) -> None:
+    conn = db.connect(tmp_path / "data" / "dropship.db")
+    run_id = db.start_run(conn)
+    db.insert_proposal(conn, Proposal(
+        id=None, run_id=run_id, asin="B0TESTASIN", qty=3, unit_cost=total / 3,
+        total=total, risk_score=22, narrative="n", status="pending"))
+    conn.close()
+
+
+def test_resolve_paths_relative_to_config_dir(tmp_path):
+    s = cli.resolve_paths(Settings(categories=[1]), tmp_path / "cfgdir" / "config.toml")
+    base = tmp_path / "cfgdir"
+    assert s.db_path == base / "data" / "dropship.db"
+    assert s.reports_dir == base / "reports"
+    assert s.supplier_quotes_path == base / "supplier_quotes.csv"
+
+
+def test_resolve_paths_keeps_absolute(tmp_path):
+    abs_db = tmp_path / "abs.db"
+    s = cli.resolve_paths(Settings(categories=[1], db_path=abs_db), tmp_path / "config.toml")
+    assert s.db_path == abs_db
+
+
+def test_missing_config_exits_2(tmp_path, capsys):
+    assert cli.main(["--config", str(tmp_path / "nope.toml"), "proposals"]) == 2
+    assert capsys.readouterr().err
+
+
+def test_invalid_config_exits_2(tmp_path, capsys):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("categories = []\n", encoding="utf-8")
+    assert cli.main(["--config", str(cfg), "proposals"]) == 2
+    assert "categories" in capsys.readouterr().err
+
+
+def test_missing_keepa_key_exits_2(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("KEEPA_API_KEY", raising=False)
+    cfg = _write_cfg(tmp_path)
+    assert cli.main(["--config", str(cfg), "run"]) == 2
+    assert "KEEPA_API_KEY" in capsys.readouterr().err
+    assert not (tmp_path / "data").exists()
+
+
+def test_approve_flow(tmp_path, capsys):
+    _seed(tmp_path)
+    cfg = _write_cfg(tmp_path)
+    assert cli.main(["--config", str(cfg), "approve", "1"]) == 0
+    assert "manual-1" in capsys.readouterr().out
+    assert cli.main(["--config", str(cfg), "approve", "1"]) == 1
+    assert "not pending" in capsys.readouterr().err
+
+
+def test_reject_flow(tmp_path, capsys):
+    _seed(tmp_path)
+    cfg = _write_cfg(tmp_path)
+    assert cli.main(["--config", str(cfg), "reject", "1"]) == 0
+    assert cli.main(["--config", str(cfg), "reject", "1"]) == 1
+    assert "not pending" in capsys.readouterr().err
+
+
+def test_proposals_lists_pending(tmp_path, capsys):
+    _seed(tmp_path)
+    cfg = _write_cfg(tmp_path)
+    assert cli.main(["--config", str(cfg), "proposals"]) == 0
+    out = capsys.readouterr().out
+    assert "B0TESTASIN" in out and "1234.50" in out and "#1" in out
+
+
+def test_proposals_status_filter_and_empty(tmp_path, capsys):
+    _seed(tmp_path)
+    cfg = _write_cfg(tmp_path)
+    assert cli.main(["--config", str(cfg), "proposals", "--status", "rejected"]) == 0
+    assert "No proposals." in capsys.readouterr().out
+
+
+def test_report_without_runs_exits_1(tmp_path, capsys):
+    cfg = _write_cfg(tmp_path)
+    assert cli.main(["--config", str(cfg), "report"]) == 1
+    assert "No runs yet." in capsys.readouterr().out
+
+
+def test_report_writes_latest(tmp_path, capsys):
+    _seed(tmp_path)
+    cfg = _write_cfg(tmp_path)
+    assert cli.main(["--config", str(cfg), "report"]) == 0
+    path = Path(capsys.readouterr().out.strip())
+    assert path.exists() and path.parent == tmp_path / "reports"
+
+
+def test_run_prints_summary(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("KEEPA_API_KEY", "k")
+    monkeypatch.setattr(cli, "KeepaClient", lambda key, domain: object())
+
+    def fake_pipeline(conn, s, keepa, llm_factory):
+        run_id = db.start_run(conn)
+        db.finish_run(conn, run_id, "ok")
+        return run_id
+
+    monkeypatch.setattr(cli, "run_pipeline", fake_pipeline)
+    cfg = _write_cfg(tmp_path)
+    assert cli.main(["--config", str(cfg), "run"]) == 0
+    out = capsys.readouterr().out
+    assert "ok" in out and "reports" in out
+
+
+def test_run_failed_status_exits_1(tmp_path, monkeypatch):
+    monkeypatch.setenv("KEEPA_API_KEY", "k")
+    monkeypatch.setattr(cli, "KeepaClient", lambda key, domain: object())
+
+    def fake_pipeline(conn, s, keepa, llm_factory):
+        run_id = db.start_run(conn)
+        db.finish_run(conn, run_id, "failed")
+        return run_id
+
+    monkeypatch.setattr(cli, "run_pipeline", fake_pipeline)
+    assert cli.main(["--config", str(_write_cfg(tmp_path)), "run"]) == 1
+
+
+def test_llm_factory_returns_none_when_anthropic_unavailable(tmp_path, monkeypatch):
+    import anthropic
+
+    def boom():
+        raise anthropic.AnthropicError("no key")
+
+    monkeypatch.setattr(cli.anthropic, "Anthropic", boom)
+    conn = db.connect(tmp_path / "t.db")
+    factory = cli.make_llm_factory(conn, Settings(categories=[1]))
+    assert factory(1) is None

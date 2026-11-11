@@ -238,3 +238,8 @@ def get_stage_runs(conn: sqlite3.Connection, run_id: int) -> list[dict]:
         (run_id,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def latest_run_id(conn: sqlite3.Connection) -> int | None:
+    row = conn.execute("SELECT MAX(id) FROM runs").fetchone()
+    return int(row[0]) if row and row[0] is not None else None

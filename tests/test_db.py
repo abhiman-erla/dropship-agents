@@ -96,3 +96,11 @@ def test_get_stage_runs(tmp_path):
     assert [r["stage"] for r in rows] == ["research", "risk"]
     assert rows[0]["attempts"] == 2 and rows[1]["error_type"] == "ValueError"
     assert db.get_stage_runs(conn, run_id + 1) == []
+
+
+def test_latest_run_id(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    assert db.latest_run_id(conn) is None
+    db.start_run(conn)
+    second = db.start_run(conn)
+    assert db.latest_run_id(conn) == second
