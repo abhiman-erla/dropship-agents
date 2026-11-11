@@ -16,18 +16,20 @@ def _num(v):
     return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
 
 
-def _to_product(row: dict) -> Product:
+def _to_product(row: dict, position: int) -> Product:
     price = row.get("price")
     value = _num(price.get("value")) if isinstance(price, dict) else None
     rating = _num(row.get("rating"))
     reviews = _num(row.get("ratingsTotal"))
     rank = _num(row.get("bestSellersRank"))
+    if rank is None:
+        rank = position  # the list is rank-ordered; 1-based position is the rank
     return Product(
         asin=row["asin"],
         title=row.get("title") or "",
         price=float(value) if value else None,
         price_avg90=None,
-        sales_rank=None if rank is None else int(rank),
+        sales_rank=int(rank),
         sales_rank_avg90=None,
         rating=None if rating is None else float(rating),
         review_count=None if reviews is None else int(reviews),
@@ -43,8 +45,20 @@ class CanopyClient:
         self._domain = domain
         self._http = http or httpx.Client(base_url="https://rest.canopyapi.co", timeout=30)
         self._cache: dict[str, Product] = {}
+        # One request per category per client (i.e. per run), even across stage retries.
+        self._lists: dict[str, list[str]] = {}
+
+    def _api_error(self, errors: list) -> CanopyError:
+        first = errors[0]
+        msg = first.get("message") if isinstance(first, dict) else None
+        text = str(msg if msg is not None else first)
+        if self._key:
+            text = text.replace(self._key, "***")
+        return CanopyError(f"API error: {text[:200]}", status_code=None)
 
     def bestsellers(self, category: str) -> list[str]:
+        if category in self._lists:
+            return list(self._lists[category])
         # Network errors propagate unchanged; the key travels in a header, not the URL.
         resp = self._http.get(
             PATH,
@@ -58,6 +72,9 @@ class CanopyClient:
             body = resp.json()
         except ValueError:
             body = None
+        errors = body.get("errors") if isinstance(body, dict) else None
+        if isinstance(errors, list) and errors:
+            raise self._api_error(errors)
         rows = None
         if isinstance(body, dict):
             data = body.get("data")
@@ -67,13 +84,14 @@ class CanopyClient:
         if not isinstance(rows, list):
             raise CanopyError("unexpected response shape", status_code=None)
         asins: list[str] = []
-        for row in rows:
+        for position, row in enumerate(rows, start=1):
             if not isinstance(row, dict) or not row.get("asin"):
                 continue
-            product = _to_product(row)
+            product = _to_product(row, position)
             self._cache[product.asin] = product
             asins.append(product.asin)
-        return asins
+        self._lists[category] = asins
+        return list(asins)
 
     def products(self, asins: list[str]) -> list[Product]:
         return [self._cache[a] for a in asins if a in self._cache]

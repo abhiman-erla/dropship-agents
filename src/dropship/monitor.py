@@ -27,10 +27,11 @@ from dropship.db import (
     start_run,
 )
 from dropship.errors import DataSourceError
-from dropship.keepa_client import KeepaClient, KeepaOutOfTokens
+from dropship.keepa_client import KeepaOutOfTokens
 from dropship.llm import LLM
 from dropship.models import Product, Proposal, StageResult
 from dropship.research import run_research
+from dropship.sources import ProductSource
 
 log = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ def run_stage(
 def run_pipeline(
     conn: sqlite3.Connection,
     s: Settings,
-    keepa: KeepaClient,
+    keepa: ProductSource,
     llm_factory: Callable[[int], LLM | None],
     sleep: Callable[[float], None] = time.sleep,
 ) -> int:

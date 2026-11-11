@@ -7,7 +7,8 @@ import pytest
 from dropship.canopy_client import CanopyClient, CanopyError
 from dropship.config import Settings, load_config
 from dropship.errors import DataSourceError
-from dropship.keepa_client import KeepaError
+from dropship.keepa_client import KeepaClient, KeepaError
+from dropship.sources import ProductSource
 
 FIXTURE = Path(__file__).parent / "fixtures" / "canopy_bestsellers.json"
 
@@ -53,14 +54,27 @@ def test_canopy_missing_price():
     assert by["B0CANOPY03"].price is None
 
 
-def test_canopy_missing_rating_and_rank_are_none():
+def test_canopy_missing_rating_is_none():
     body = {"data": {"amazonBestSellers": {"productResults": {"results": [
         {"asin": "B0X", "price": {"value": 10}}]}}}}
     c = make(lambda r: httpx.Response(200, json=body))
     c.bestsellers("x")
     p = c.products(["B0X"])[0]
-    assert p.rating is None and p.review_count is None and p.sales_rank is None
+    assert p.rating is None and p.review_count is None
     assert p.title == ""
+
+
+def test_canopy_missing_rank_falls_back_to_position():
+    body = {"data": {"amazonBestSellers": {"productResults": {"results": [
+        {"asin": "B0X", "bestSellersRank": 7},
+        {"asin": "B0Y"},
+        {"title": "no asin, still counts as a position"},
+        {"asin": "B0Z", "bestSellersRank": None},
+    ]}}}}
+    c = make(lambda r: httpx.Response(200, json=body))
+    c.bestsellers("x")
+    by = {p.asin: p.sales_rank for p in c.products(["B0X", "B0Y", "B0Z"])}
+    assert by == {"B0X": 7, "B0Y": 2, "B0Z": 4}
 
 
 def test_canopy_sends_key_header_and_params():
@@ -116,3 +130,61 @@ def test_us_demo_defaults(tmp_path):
     assert s.shipping_cost == 5.0 and s.max_asins_per_category == 50
     assert s.categories == ["bestsellers_kitchen", "12"]
     assert Settings(categories=["a"]).categories == ["a"]
+
+
+def test_canopy_bestsellers_cached_per_category():
+    seen = []
+    c = make(ok_handler(seen))
+    first = c.bestsellers("x")
+    assert c.bestsellers("x") == first
+    assert len(seen) == 1
+    c.bestsellers("y")
+    assert len(seen) == 2
+
+
+def test_canopy_failed_request_not_cached():
+    seen = []
+    ok = ok_handler()
+
+    def h(request):
+        seen.append(request)
+        return httpx.Response(503) if len(seen) == 1 else ok(request)
+
+    c = make(h)
+    with pytest.raises(CanopyError):
+        c.bestsellers("x")
+    assert c.bestsellers("x") == ["B0CANOPY01", "B0CANOPY02", "B0CANOPY03"]
+    assert len(seen) == 2
+    c.bestsellers("x")
+    assert len(seen) == 2
+
+
+def test_canopy_api_errors_body_raises_without_key():
+    msg = "Invalid categoryId: " + "x" * 300
+    body = {"data": None, "errors": [{"message": msg}, {"message": "second"}]}
+    c = make(lambda r: httpx.Response(200, json=body))
+    with pytest.raises(CanopyError) as ei:
+        c.bestsellers("x")
+    assert str(ei.value) == "API error: " + msg[:200]
+    assert "SECRETKEY" not in str(ei.value)
+    assert ei.value.status_code is None
+
+
+def test_canopy_api_errors_never_echo_key():
+    body = {"errors": [{"message": "bad key SECRETKEY"}]}
+    c = make(lambda r: httpx.Response(200, json=body))
+    with pytest.raises(CanopyError) as ei:
+        c.bestsellers("x")
+    assert "SECRETKEY" not in str(ei.value)
+    assert str(ei.value).startswith("API error: ")
+
+
+def test_canopy_empty_results_is_not_an_error():
+    body = {"data": {"amazonBestSellers": {"productResults": {"results": []}}}}
+    assert make(lambda r: httpx.Response(200, json=body)).bestsellers("x") == []
+
+
+def test_both_clients_are_product_sources():
+    assert isinstance(make(ok_handler()), ProductSource)
+    assert isinstance(KeepaClient("k", 1, http=httpx.Client(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200)))), ProductSource)

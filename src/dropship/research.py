@@ -8,10 +8,10 @@ from pydantic import BaseModel
 
 from dropship.config import Settings
 from dropship.db import record_dropped, save_candidates
-from dropship.keepa_client import KeepaClient
 from dropship.llm import LLM, LLMBudgetExceeded, LLMUnusable
 from dropship.margins import build_candidates, explain_drops, load_supplier_quotes
 from dropship.models import Candidate, Product, StageResult
+from dropship.sources import ProductSource
 
 RESEARCH_MODEL = "claude-haiku-5-5"
 
@@ -60,7 +60,7 @@ def _user_payload(top: list[Candidate], products: dict[str, Product]) -> str:
 
 
 def run_research(
-    keepa: KeepaClient,
+    keepa: ProductSource,
     llm: LLM | None,
     conn: sqlite3.Connection,
     run_id: int,

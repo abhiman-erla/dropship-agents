@@ -373,3 +373,32 @@ def test_report_lists_dropped_products(tmp_path):
     empty = start_run(conn)
     seg = write_report(conn, empty, s).read_text(encoding="utf-8").split("## Dropped products")[1]
     assert seg.lstrip().startswith("None.")
+
+
+def test_pipeline_retry_reuses_canopy_lists(tmp_path, monkeypatch):
+    # Category "a" succeeds, "b" returns 503 once: the retried research stage must not
+    # request "a" again (one Canopy request per category per run).
+    from dropship.canopy_client import CanopyClient
+
+    monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
+    seen = []
+    body = {"data": {"amazonBestSellers": {"productResults": {"results": [
+        {"asin": "B0A", "title": "t", "price": {"value": 30}}]}}}}
+
+    def handler(request):
+        cat = request.url.params["categoryId"]
+        seen.append(cat)
+        if cat == "b" and seen.count("b") == 1:
+            return httpx.Response(503)
+        return httpx.Response(200, json=body)
+
+    client = CanopyClient("k", "US", http=httpx.Client(
+        base_url="https://rest.canopyapi.co", transport=httpx.MockTransport(handler)))
+    s = india(data_source="canopy", categories=["a", "b"], db_path=tmp_path / "t.db",
+              reports_dir=tmp_path / "reports", supplier_quotes_path=tmp_path / "none.csv")
+    conn = connect(s.db_path)
+    run_id = run_pipeline(conn, s, client, lambda rid: None, sleep=Sleeper())
+    row = conn.execute("SELECT status, attempts FROM stage_runs WHERE run_id = ? AND"
+                       " stage = 'research'", (run_id,)).fetchone()
+    assert row[0] != "failed" and row[1] == 2
+    assert seen == ["a", "b", "b"]
