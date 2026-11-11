@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -80,6 +81,7 @@ class DashboardData:
     approved_today: float
     daily_cap: float
     requests_this_month: int
+    requests_since: str | None
     free_quota: int | None
     tokens_today: int
     pending: list[OrderView]
@@ -93,6 +95,7 @@ class RunDetail:
     candidates: list[Candidate]
     dropped: list[dict]
     tokens: int
+    reason_counts: list[tuple[str, int]]
 
 
 @dataclass(frozen=True)
@@ -104,6 +107,7 @@ class ProductRow:
     verdict: str | None
     outcome: str
     last_run_id: int
+    last_seen: str | None
     amazon_url: str
 
 
@@ -148,6 +152,8 @@ def dashboard(conn: sqlite3.Connection, s: Settings, today: date) -> DashboardDa
         daily_cap=s.daily_spend_cap,
         requests_this_month=db.source_requests_in_month(
             conn, s.data_source, today.year, today.month),
+        requests_since=conn.execute(
+            "SELECT MIN(created_at) FROM source_requests").fetchone()[0],
         free_quota=_FREE_QUOTA.get(s.data_source),
         tokens_today=db.llm_tokens_today(conn),
         pending=pending,
@@ -168,11 +174,28 @@ def runs(conn: sqlite3.Connection) -> list[RunSummary]:
     return [_summary(conn, dict(r)) for r in rows]
 
 
+def reason_category(reason: str) -> str:
+    """A drop reason without its detail: the text before the first ':' or digit-led word.
+
+    E.g. "margin 12.3% below min 25.0%" -> "margin"; "verdict <x>" collapses to "verdict".
+    """
+    words = []
+    for word in reason.split(":", 1)[0].split():
+        if word[0].isdigit():
+            break
+        words.append(word)
+    category = " ".join(words) or reason.strip()
+    return "verdict" if category.startswith("verdict ") else category
+
+
 def run_detail(conn: sqlite3.Connection, run_id: int, reason: str | None) -> RunDetail | None:
     run = db.get_run(conn, run_id)
     if run is None:
         return None
     dropped = db.get_dropped(conn, run_id)
+    counts = Counter(reason_category(d["reason"]) for d in dropped)
+    # most_common keeps first-seen order among equal counts
+    reason_counts = counts.most_common()
     if reason:
         dropped = [d for d in dropped if reason.lower() in d["reason"].lower()]
     tokens = conn.execute(
@@ -184,6 +207,7 @@ def run_detail(conn: sqlite3.Connection, run_id: int, reason: str | None) -> Run
         candidates=db.get_candidates(conn, run_id),
         dropped=dropped,
         tokens=int(tokens),
+        reason_counts=reason_counts,
     )
 
 
@@ -210,6 +234,7 @@ def products(conn: sqlite3.Connection, q: str | None) -> list[ProductRow]:
     for r in conn.execute("SELECT run_id, asin, status FROM proposals ORDER BY id"):
         entry(r["asin"], r["run_id"])["proposal"] = r["status"]
 
+    started = {r["id"]: r["started_at"] for r in conn.execute("SELECT id, started_at FROM runs")}
     needle = q.lower() if q else None
     rows = []
     for asin, e in info.items():
@@ -218,7 +243,7 @@ def products(conn: sqlite3.Connection, q: str | None) -> list[ProductRow]:
         last = max(e["runs"])
         seen = e["runs"][last]
         if seen["proposal"] is not None:
-            outcome = _OUTCOME[seen["proposal"]]
+            outcome = _OUTCOME.get(seen["proposal"], seen["proposal"])
         elif seen["drop"] is not None:
             outcome = f"dropped: {seen['drop']}"
         else:
@@ -227,7 +252,7 @@ def products(conn: sqlite3.Connection, q: str | None) -> list[ProductRow]:
         rows.append(ProductRow(
             asin, e["title"], c["sell_price"] if c else None,
             c["margin_pct"] if c else None, c["llm_verdict"] if c else None,
-            outcome, last, amazon_url(asin)))
+            outcome, last, started.get(last), amazon_url(asin)))
     rows.sort(key=lambda r: (-r.last_run_id, r.asin))
     return rows
 

@@ -248,3 +248,80 @@ def test_settings_lines_and_quotes(tmp_path):
     assert q.settings_lines(_settings(tmp_path))[-1] == "Blocked brands: none"
     (tmp_path / "q.csv").write_text("asin,unit_cost\nB2,5\nA1,3.5\n", encoding="utf-8")
     assert q.quotes(s) == [("A1", 3.5), ("B2", 5.0)]
+
+
+def test_products_unknown_proposal_status_is_shown_raw(tmp_path):
+    s = _settings(tmp_path)
+    conn = db.connect(s.db_path)
+    run = db.start_run(conn)
+    db.save_candidates(conn, run, [_cand("W1")])
+    pid = db.insert_proposal(conn, _prop(run, "W1"))
+    conn.execute("UPDATE proposals SET status = 'weird' WHERE id = ?", (pid,))
+    conn.commit()
+    ro = _ro(s, conn)
+    assert [p.outcome for p in q.products(ro, None)] == ["weird"]
+
+
+def test_products_last_seen_is_latest_run_start(tmp_path):
+    s = _settings(tmp_path)
+    conn = db.connect(s.db_path)
+    r1 = db.start_run(conn)
+    db.save_candidates(conn, r1, [_cand("L1")])
+    r2 = db.start_run(conn)
+    db.save_candidates(conn, r2, [_cand("L1")])
+    conn.execute("UPDATE runs SET started_at = '2026-11-10T08:00:00' WHERE id = ?", (r1,))
+    conn.execute("UPDATE runs SET started_at = '2026-11-11T12:34:56' WHERE id = ?", (r2,))
+    conn.commit()
+    ro = _ro(s, conn)
+    row = q.products(ro, None)[0]
+    assert (row.last_run_id, row.last_seen) == (r2, "2026-11-11T12:34:56")
+
+
+def test_dashboard_requests_since(tmp_path):
+    s = _settings(tmp_path)
+    conn = db.connect(s.db_path)
+    run = db.start_run(conn)
+    ro = _ro(s, conn)
+    assert q.dashboard(ro, s, date.today()).requests_since is None
+    ro.close()
+    conn = db.connect(s.db_path)
+    db.record_source_requests(conn, run, "canopy", 2)
+    db.record_source_requests(conn, run, "keepa", 1)
+    conn.execute("UPDATE source_requests SET created_at = '2026-10-02T09:00:00'"
+                 " WHERE source = 'keepa'")
+    conn.commit()
+    ro = _ro(s, conn)
+    assert q.dashboard(ro, s, date.today()).requests_since == "2026-10-02T09:00:00"
+
+
+def test_reason_category():
+    cases = {
+        "blocked brand: Acme": "blocked brand",
+        "price out of range": "price out of range",
+        "margin 12.3% below min 25.0%": "margin",
+        "verdict skip": "verdict",
+        "verdict unreviewed": "verdict",
+        "cooldown: decided within 30 days": "cooldown",
+        "missing price": "missing price",
+        "rating too low": "rating too low",
+        "risk 45 > max 40": "risk",
+        "not in top 5 by score": "not in top",
+    }
+    for reason, category in cases.items():
+        assert q.reason_category(reason) == category, reason
+
+
+def test_run_detail_reason_counts(tmp_path):
+    s = _settings(tmp_path)
+    conn = db.connect(s.db_path)
+    run = db.start_run(conn)
+    db.record_dropped(conn, run, [
+        ("D1", "t", "research", "missing price"),
+        ("D2", "t", "research", "blocked brand: Acme"),
+        ("D3", "t", "research", "blocked brand: Zed"),
+        ("D4", "t", "research", "blocked brand: Acme"),
+    ])
+    ro = _ro(s, conn)
+    expected = [("blocked brand", 3), ("missing price", 1)]
+    assert q.run_detail(ro, run, None).reason_counts == expected
+    assert q.run_detail(ro, run, "missing").reason_counts == expected
