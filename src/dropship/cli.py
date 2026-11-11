@@ -122,7 +122,8 @@ _COMMANDS = {
 
 
 def main(argv: list[str] | None = None) -> int:
-    # The Keepa key travels in the query string; httpx logs request URLs at INFO.
+    # Protects the Keepa key, which travels in the query string (httpx logs request
+    # URLs at INFO). Canopy sends its key in a header, which httpx does not log.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     args = _build_parser().parse_args(argv)
     try:

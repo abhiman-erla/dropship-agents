@@ -144,12 +144,22 @@ def run_pipeline(
 _COST_LABELS = {"quoted": "quoted", "estimated": "estimated cost"}
 
 
+def _one_line(text: str) -> str:
+    """Collapse newlines/tabs/runs of spaces so a title cannot break a report line."""
+    return " ".join(text.split())
+
+
+def _cell(text: str) -> str:
+    """A title as a Markdown table cell: one line, no pipes, at most 60 chars."""
+    return _one_line(text)[:60].replace("|", "/")
+
+
 def proposal_details(conn: sqlite3.Connection, p: Proposal) -> tuple[str, str]:
-    """Title and cost-source label for a proposal, from its run's candidate row."""
+    """Title (one line) and cost-source label for a proposal, from its run's candidate row."""
     c = get_candidate(conn, p.run_id, p.asin)
     if c is None:
         return "?", "unknown"
-    return c.title, _COST_LABELS.get(c.cost_source, c.cost_source)
+    return _one_line(c.title), _COST_LABELS.get(c.cost_source, c.cost_source)
 
 
 def write_report(conn: sqlite3.Connection, run_id: int, s: Settings) -> Path:
@@ -195,7 +205,7 @@ def write_report(conn: sqlite3.Connection, run_id: int, s: Settings) -> Path:
             "|---|---|---|---|---|---|---|",
         ]
         for c in cands:
-            title = c.title[:60].replace("|", "/")
+            title = _cell(c.title)
             lines.append(
                 f"| {c.asin} | {title} | {c.sell_price:.2f} | {c.supplier_cost:.2f} |"
                 f" {c.margin_pct * 100:.1f} | {c.score:.2f} | {c.llm_verdict} |"
@@ -225,7 +235,7 @@ def write_report(conn: sqlite3.Connection, run_id: int, s: Settings) -> Path:
     if dropped:
         lines += ["| ASIN | Title | Stage | Reason |", "|---|---|---|---|"]
         for d in dropped:
-            title = d["title"][:60].replace("|", "/")
+            title = _cell(d["title"])
             reason = d["reason"].replace("|", "/")
             lines.append(f"| {d['asin']} | {title} | {d['stage']} | {reason} |")
     else:

@@ -402,3 +402,25 @@ def test_pipeline_retry_reuses_canopy_lists(tmp_path, monkeypatch):
                        " stage = 'research'", (run_id,)).fetchone()
     assert row[0] != "failed" and row[1] == 2
     assert seen == ["a", "b", "b"]
+
+
+def test_report_titles_collapse_whitespace(tmp_path):
+    from dropship.db import record_dropped
+    s = _settings(tmp_path)
+    conn = connect(s.db_path)
+    run_id = start_run(conn)
+    messy = "  Spatula\nSet |\tHeat  safe\r\n"
+    save_candidates(conn, run_id, [Candidate(
+        asin="B0M", title=messy, sell_price=30.0, supplier_cost=10.0,
+        cost_source="quoted", margin=10.0, margin_pct=0.4, score=0.9,
+    )])
+    insert_proposal(conn, Proposal(
+        id=None, run_id=run_id, asin="B0M", qty=1, unit_cost=10.0, total=10.0,
+        risk_score=5, narrative="n", status="pending",
+    ))
+    record_dropped(conn, run_id, [("B0D", "Lamp\n\n" + "Y " * 40, "risk", "verdict weak")])
+    text = write_report(conn, run_id, s).read_text(encoding="utf-8")
+    assert "| B0M | Spatula Set / Heat safe | 30.00 |" in text
+    assert "  - Spatula Set | Heat safe - unit 10.00 (quoted)" in text
+    assert "| B0D | " + ("Lamp " + "Y " * 40)[:60] + " | risk | verdict weak |" in text
+    assert "Spatula\nSet" not in text
