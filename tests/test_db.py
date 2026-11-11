@@ -70,3 +70,29 @@ def test_last_success(tmp_path):
     db.record_stage(conn, run_id, StageResult(stage="research", status="degraded", attempts=1),
                     "2026-01-03T00:00:00", "2026-01-03T00:01:00")
     assert db.last_success(conn, "research") == datetime(2026, 1, 3, 0, 1)
+
+
+def test_get_run(tmp_path):
+    from dropship.models import StageResult  # noqa: F401
+    conn = db.connect(tmp_path / "t.db")
+    assert db.get_run(conn, 99) is None
+    run_id = db.start_run(conn)
+    assert db.get_run(conn, run_id)["status"] == "running"
+    db.finish_run(conn, run_id, "degraded")
+    row = db.get_run(conn, run_id)
+    assert row["status"] == "degraded" and row["finished_at"] is not None
+
+
+def test_get_stage_runs(tmp_path):
+    from dropship.models import StageResult
+    conn = db.connect(tmp_path / "t.db")
+    run_id = db.start_run(conn)
+    db.record_stage(conn, run_id, StageResult(stage="research", status="ok", attempts=2),
+                    "2026-01-01T00:00:00", "2026-01-01T00:01:00")
+    db.record_stage(conn, run_id, StageResult(stage="risk", status="failed", attempts=1,
+                    error_type="ValueError", message="boom"),
+                    "2026-01-01T00:01:00", "2026-01-01T00:02:00")
+    rows = db.get_stage_runs(conn, run_id)
+    assert [r["stage"] for r in rows] == ["research", "risk"]
+    assert rows[0]["attempts"] == 2 and rows[1]["error_type"] == "ValueError"
+    assert db.get_stage_runs(conn, run_id + 1) == []

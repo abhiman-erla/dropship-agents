@@ -222,3 +222,19 @@ def last_success(conn: sqlite3.Connection, stage: str) -> datetime | None:
         (stage,),
     ).fetchone()
     return datetime.fromisoformat(row[0]) if row else None
+
+
+def get_run(conn: sqlite3.Connection, run_id: int) -> dict | None:
+    row = conn.execute(
+        "SELECT id, started_at, finished_at, status FROM runs WHERE id = ?", (run_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_stage_runs(conn: sqlite3.Connection, run_id: int) -> list[dict]:
+    rows = conn.execute(
+        "SELECT stage, status, attempts, error_type, message, started_at, finished_at"
+        " FROM stage_runs WHERE run_id = ? ORDER BY id",
+        (run_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
