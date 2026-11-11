@@ -65,6 +65,7 @@ max_sales_rank = 50          # Canopy: best-seller list position
 min_rating = 4.0
 min_reviews = 50
 max_offer_count = 15
+blocked_brands = []          # whole-word, case-insensitive title match; drops big brands
 fee_pct = 0.15
 shipping_cost = 5.0
 est_cost_ratio = 0.35

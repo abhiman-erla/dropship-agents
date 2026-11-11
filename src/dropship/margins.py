@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import math
+import re
 from pathlib import Path
 
 from dropship.config import Settings
@@ -28,7 +29,18 @@ def load_supplier_quotes(path: Path) -> dict[str, float]:
     return quotes
 
 
+def blocked_brand(title: str, brands: list[str]) -> str | None:
+    """The first blocked brand appearing in `title` as whole words (any case), else None."""
+    for brand in brands:
+        if re.search(rf"(?<!\w){re.escape(brand)}(?!\w)", title, re.IGNORECASE):
+            return brand
+    return None
+
+
 def passes_filter(p: Product, s: Settings) -> tuple[bool, str]:
+    brand = blocked_brand(p.title, s.blocked_brands)
+    if brand is not None:
+        return False, f"blocked brand: {brand}"
     if p.price is None or p.price <= 0:
         return False, "missing price"
     if not (s.price_min <= p.price <= s.price_max):
@@ -89,7 +101,7 @@ def explain_drops(
         if margin_pct < s.min_margin_pct:
             out.append(
                 (p.asin, p.title,
-                 f"margin {margin_pct:.0%} below min {s.min_margin_pct:.0%}")
+                 f"margin {margin_pct:.1%} below min {s.min_margin_pct:.1%}")
             )
     return out
 

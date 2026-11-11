@@ -134,4 +134,40 @@ def test_explain_drops_reasons(s):
     drops = explain_drops([good, noprice, thin], {"T": 900.0}, s)
     assert [d[0] for d in drops] == ["N", "T"]
     assert drops[0] == ("N", "No price", "missing price")
-    assert drops[1][2].startswith("margin ") and "below min 25%" in drops[1][2]
+    assert drops[1][2].startswith("margin ") and "below min 25.0%" in drops[1][2]
+
+
+def test_blocked_brand_dropped_case_insensitive(s):
+    s = s.model_copy(update={"blocked_brands": ["Owala", "stanley", "Amazon Basics"]})
+    assert passes_filter(make_product(title="Owala FreeSip Bottle 24 oz"), s) == (
+        False, "blocked brand: Owala")
+    assert passes_filter(make_product(title="STANLEY Quencher H2.0 Tumbler"), s) == (
+        False, "blocked brand: stanley")
+    assert passes_filter(make_product(title="Amazon Basics Kitchen Scale"), s) == (
+        False, "blocked brand: Amazon Basics")
+
+
+def test_blocked_brand_matches_whole_words_only(s):
+    s = s.model_copy(update={"blocked_brands": ["Ninja"]})
+    assert passes_filter(make_product(title="Ninjago Lunch Box"), s) == (True, "")
+    assert passes_filter(make_product(title="Lid for Ninja Air Fryer"), s)[0] is False
+
+
+def test_no_blocked_brands_by_default(s):
+    assert s.blocked_brands == []
+    assert passes_filter(make_product(title="Owala Bottle"), s) == (True, "")
+
+
+def test_blocked_brand_shows_in_drop_reasons(s):
+    from dropship.margins import explain_drops
+    s = s.model_copy(update={"blocked_brands": ["YETI"]})
+    drops = explain_drops([make_product(asin="Y", title="YETI Rambler 20 oz")], {}, s)
+    assert drops == [("Y", "YETI Rambler 20 oz", "blocked brand: YETI")]
+
+
+def test_margin_reason_has_one_decimal(s):
+    from dropship.margins import explain_drops
+    # price 1000, cost 400, fee 150, ship 60 -> margin 390 = 39.0%; min raised to 0.395
+    s = s.model_copy(update={"min_margin_pct": 0.395})
+    drops = explain_drops([make_product(asin="T", title="Thin")], {"T": 400.0}, s)
+    assert drops[0][2] == "margin 39.0% below min 39.5%"

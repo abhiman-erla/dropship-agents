@@ -13,6 +13,7 @@ max_sales_rank = 50          # for Canopy, the best-seller list position is the 
 min_rating = 4.0
 min_reviews = 50
 max_offer_count = 15
+blocked_brands = []          # e.g. ["Owala", "Stanley", "YETI", "KitchenAid", "Amazon Basics"]: big brands can't be dropshipped
 fee_pct = 0.15
 shipping_cost = 5.0
 est_cost_ratio = 0.35

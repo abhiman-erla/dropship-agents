@@ -78,3 +78,11 @@ def test_category_types_matching_data_source_accepted(tmp_path):
     assert s.categories == ["bestsellers_kitchen", "b"]
     s = load_config(_write(tmp_path, 'data_source = "keepa"\ncategories = [1, 2]\n'))
     assert s.categories == [1, 2]
+
+
+def test_blocked_brands_loaded_and_stripped(tmp_path):
+    from dropship.config import load_config
+    p = tmp_path / "c.toml"
+    p.write_text('categories = ["bestsellers_kitchen"]\nblocked_brands = [" Owala ", "", "YETI"]\n',
+                 encoding="utf-8")
+    assert load_config(p).blocked_brands == ["Owala", "YETI"]

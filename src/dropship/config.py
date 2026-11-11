@@ -4,7 +4,14 @@ import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 
 class ConfigError(Exception):
@@ -40,9 +47,17 @@ class Settings(BaseModel):
     max_asins_per_category: int = Field(50, gt=0)
     # an approved/rejected ASIN is not proposed again for this many days (0 = off)
     proposal_cooldown_days: int = Field(30, ge=0)
+    # products whose title contains one of these brands (whole words, any case) are dropped:
+    # big brands can't be bought from dropship suppliers
+    blocked_brands: list[str] = Field(default_factory=list)
     db_path: Path = Path("data/dropship.db")
     reports_dir: Path = Path("reports")
     supplier_quotes_path: Path = Path("supplier_quotes.csv")
+
+    @field_validator("blocked_brands")
+    @classmethod
+    def _clean_brands(cls, brands: list[str]) -> list[str]:
+        return [b.strip() for b in brands if b.strip()]
 
     @model_validator(mode="after")
     def _categories_match_source(self) -> Settings:

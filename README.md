@@ -49,7 +49,8 @@ and the report names the category under Errors and Dropped products.
 ## What the agents do
 
 **Research** pulls candidate products in your categories from the data source, filters them by price, rank,
-rating, reviews and offer count, and estimates margin from your supplier quotes (or the
+rating, reviews, offer count and your `blocked_brands` list (big brands can't be sourced from dropship
+suppliers), and estimates margin from your supplier quotes (or the
 `est_cost_ratio` fallback). A cheap LLM pass then judges the top candidates.
 
 **Risk** takes the candidates the LLM rated promising (or, if research ran without the LLM,
