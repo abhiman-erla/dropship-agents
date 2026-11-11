@@ -151,3 +151,10 @@ def test_python_dash_m_dropship_help():
                        capture_output=True, text=True)
     assert r.returncode == 0
     assert "approve" in r.stdout
+
+
+@pytest.mark.parametrize("extra", ["max_offer_count = 0\n", "typo_key = 1\n", "price_min = [\n"])
+def test_bad_config_exits_2_without_traceback(tmp_path, capsys, extra):
+    assert cli.main(["--config", str(_write_cfg(tmp_path, extra)), "proposals"]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("config error:") and "Traceback" not in err

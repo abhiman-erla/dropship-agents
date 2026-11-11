@@ -28,3 +28,28 @@ def test_empty_categories_raises(tmp_path):
 def test_override(tmp_path):
     s = load_config(_write(tmp_path, "categories = [1]\nmin_rating = 4.5\n"))
     assert s.min_rating == 4.5
+
+
+def test_unknown_key_rejected(tmp_path):
+    with pytest.raises(ConfigError, match="min_ratng"):
+        load_config(_write(tmp_path, "categories = [1]\nmin_ratng = 4.5\n"))
+
+
+def test_zero_max_offer_count_rejected(tmp_path):
+    with pytest.raises(ConfigError, match="max_offer_count"):
+        load_config(_write(tmp_path, "categories = [1]\nmax_offer_count = 0\n"))
+
+
+@pytest.mark.parametrize("line", [
+    "fee_pct = 1.0", "est_cost_ratio = -0.1", "min_margin_pct = 1.5",
+    "max_risk_score = 101", "min_rating = 5.5", "price_min = -1",
+    "max_asins_per_category = 0", "llm_top_n = 0",
+])
+def test_out_of_range_values_rejected(tmp_path, line):
+    with pytest.raises(ConfigError):
+        load_config(_write(tmp_path, f"categories = [1]\n{line}\n"))
+
+
+def test_malformed_toml_raises_config_error(tmp_path):
+    with pytest.raises(ConfigError):
+        load_config(_write(tmp_path, "categories = [1\n"))
