@@ -9,19 +9,27 @@ def _clamp(x: float, lo: float, hi: float) -> float:
 
 
 def risk_score(c: Candidate, p: Product, s: Settings) -> RiskAssessment:
+    unknown: list[str] = []
+
     price_vol = 0.0
     if p.price is not None and p.price_avg90:
         price_vol = min(25.0, abs(p.price - p.price_avg90) / p.price_avg90 * 100)
+    else:
+        unknown.append("price_volatility")
 
     rank_vol = 0.0
     if p.sales_rank is not None and p.sales_rank_avg90:
         rank_vol = min(
             20.0, max(0.0, (p.sales_rank - p.sales_rank_avg90) / p.sales_rank_avg90) * 50
         )
+    else:
+        unknown.append("rank_volatility")
 
     competition = 0.0
     if p.offer_count is not None:
         competition = min(20.0, p.offer_count / s.max_offer_count * 20)
+    else:
+        unknown.append("competition")
 
     low_rating = 0.0
     if p.rating is not None:
@@ -39,5 +47,6 @@ def risk_score(c: Candidate, p: Product, s: Settings) -> RiskAssessment:
         "estimated_cost": round(estimated),
     }
     return RiskAssessment(
-        asin=c.asin, risk_score=min(100, sum(factors.values())), factors=factors
+        asin=c.asin, risk_score=min(100, sum(factors.values())), factors=factors,
+        unknown=unknown,
     )

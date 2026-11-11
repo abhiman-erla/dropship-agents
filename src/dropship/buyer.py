@@ -13,6 +13,7 @@ from dropship.db import (
     get_proposal,
     has_pending_proposal,
     insert_proposal,
+    list_proposals,
     record_dropped,
     recently_decided,
     set_proposal_status,
@@ -28,7 +29,9 @@ RISK_SYSTEM = (
     "explaining the main risks and whether a trial purchase looks reasonable, and "
     "suggest an integer trial quantity to buy (start small; prefer fewer units when "
     "risk is higher or the cost is only estimated). A human will review your "
-    "suggestion before anything is bought."
+    "suggestion before anything is bought. "
+    "Factors that are null and listed in unknown_factors mean the data was unavailable, "
+    "not that the risk is low; treat them as uncertainty."
 )
 
 FALLBACK_NARRATIVE = "LLM unavailable - deterministic risk only"
@@ -59,12 +62,54 @@ def _fit_qty(qty: int, unit_cost: float, s: Settings) -> int:
     return qty  # 0 means even one unit does not fit
 
 
-def _best_candidates(cands: list[Candidate], s: Settings) -> list[Candidate]:
+def _blocked(conn: sqlite3.Connection, asin: str, s: Settings, own: set[str]) -> bool:
+    """Pending (from an earlier run) or recently decided: not eligible for a top-N slot.
+    `own` holds ASINs this run already proposed, so a retried stage keeps its top N."""
+    if asin in own:
+        return False
+    return has_pending_proposal(conn, asin) or recently_decided(
+        conn, asin, s.proposal_cooldown_days
+    )
+
+
+def _top_n(
+    conn: sqlite3.Connection, cands: list[Candidate], s: Settings, own: set[str]
+) -> list[Candidate]:
+    """The top `llm_top_n` by score among eligible candidates (as research sends them
+    to the LLM)."""
+    eligible = [c for c in cands if not _blocked(conn, c.asin, s, own)]
+    return sorted(eligible, key=lambda c: c.score, reverse=True)[: s.llm_top_n]
+
+
+def _best_candidates(
+    conn: sqlite3.Connection, cands: list[Candidate], s: Settings, own: set[str]
+) -> list[Candidate]:
     """The candidates worth risk-scoring: the LLM's "promising" ones or, when nothing
-    was reviewed (research degraded / no LLM), the top `llm_top_n` by score."""
+    was reviewed (research degraded / no LLM), the top `llm_top_n` eligible by score."""
     if any(c.llm_verdict != "unreviewed" for c in cands):
         return [c for c in cands if c.llm_verdict == "promising"]
-    return sorted(cands, key=lambda c: c.score, reverse=True)[: s.llm_top_n]
+    return _top_n(conn, cands, s, own)
+
+
+def _drop_reason(
+    conn: sqlite3.Connection, c: Candidate, top_ids: set[int], s: Settings
+) -> str | None:
+    """Why a candidate was not risk-scored (None: no drop row, e.g. already pending)."""
+    if c.llm_verdict != "unreviewed":
+        return f"verdict {c.llm_verdict}"
+    if has_pending_proposal(conn, c.asin):
+        return None  # it is listed under proposals awaiting approval
+    if recently_decided(conn, c.asin, s.proposal_cooldown_days):
+        return f"cooldown: decided within {s.proposal_cooldown_days} days"
+    if id(c) in top_ids:
+        return "verdict unreviewed"  # sent to the LLM, which returned no verdict for it
+    return f"not in top {s.llm_top_n} by score"
+
+
+def _with_unknown(narrative: str, unknown: list[str]) -> str:
+    if not unknown:
+        return narrative
+    return f"{narrative} [risk excludes: {', '.join(unknown)} - no data]"
 
 
 def run_risk(
@@ -76,13 +121,17 @@ def run_risk(
 ) -> StageResult:
     degraded_error = ""
     all_cands = get_candidates(conn, run_id)
-    best = _best_candidates(all_cands, s)
+    own = {p.asin for p in list_proposals(conn) if p.run_id == run_id}
+    best = _best_candidates(conn, all_cands, s, own)
     best_ids = {id(c) for c in best}
-    drops: list[tuple[str, str, str, str]] = [
-        (c.asin, c.title, "risk", f"verdict {c.llm_verdict}")
-        for c in all_cands
-        if id(c) not in best_ids
-    ]
+    top_ids = {id(c) for c in _top_n(conn, all_cands, s, own)}
+    drops: list[tuple[str, str, str, str]] = []
+    for c in all_cands:
+        if id(c) in best_ids:
+            continue
+        reason = _drop_reason(conn, c, top_ids, s)
+        if reason is not None:
+            drops.append((c.asin, c.title, "risk", reason))
     for c in best:
         product = products.get(c.asin)
         if product is None or has_pending_proposal(conn, c.asin):
@@ -95,6 +144,11 @@ def run_risk(
         if ra.risk_score > s.max_risk_score:
             drops.append((c.asin, c.title, "risk",
                           f"risk {ra.risk_score} > max {s.max_risk_score}"))
+            continue
+        if _fit_qty(1, c.supplier_cost, s) < 1:
+            drops.append((c.asin, c.title, "risk",
+                          f"unit cost {c.supplier_cost:.2f} exceeds max order value"
+                          f" {s.max_order_value:.2f}"))
             continue
 
         narrative = FALLBACK_NARRATIVE
@@ -111,7 +165,10 @@ def run_risk(
                     "cost_source": c.cost_source,
                     "margin_pct": c.margin_pct,
                     "risk_score": ra.risk_score,
-                    "factors": ra.factors,
+                    "factors": {
+                        k: None if k in ra.unknown else v for k, v in ra.factors.items()
+                    },
+                    "unknown_factors": ra.unknown,
                 },
                 separators=(",", ":"),
             )
@@ -127,9 +184,7 @@ def run_risk(
         except (LLMBudgetExceeded, LLMUnusable) as e:
             degraded_error = degraded_error or type(e).__name__
 
-        qty = _fit_qty(suggested, c.supplier_cost, s)
-        if qty < 1:
-            continue
+        qty = _fit_qty(suggested, c.supplier_cost, s)  # >= 1: one unit fits (checked above)
         insert_proposal(
             conn,
             Proposal(
@@ -140,7 +195,7 @@ def run_risk(
                 unit_cost=c.supplier_cost,
                 total=qty * c.supplier_cost,
                 risk_score=ra.risk_score,
-                narrative=narrative,
+                narrative=_with_unknown(narrative, ra.unknown),
                 status="pending",
             ),
         )

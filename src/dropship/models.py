@@ -34,6 +34,8 @@ class RiskAssessment(BaseModel):
     asin: str
     risk_score: int
     factors: dict[str, int]
+    # factors whose inputs were missing: they score 0 but mean "no data", not "no risk"
+    unknown: list[str] = []
     narrative: str = ""
     suggested_qty: int = 0
 

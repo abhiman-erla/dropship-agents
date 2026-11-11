@@ -35,3 +35,22 @@ def test_missing_inputs_are_zero():
     p = prod(price=None, price_avg90=None, sales_rank=None, rating=None, offer_count=None)
     ra = risk_score(cand(margin_pct=0.5, source="quoted"), p, S)
     assert ra.risk_score == 0
+    assert ra.unknown == ["price_volatility", "rank_volatility", "competition"]
+
+
+def test_unknown_factors_listed_when_inputs_missing():
+    # Canopy-like: no 90-day averages and no offer count.
+    p = prod(price_avg90=None, sales_rank_avg90=None, offer_count=None)
+    ra = risk_score(cand(), p, S)
+    assert ra.unknown == ["price_volatility", "rank_volatility", "competition"]
+    assert ra.factors["price_volatility"] == 0 and ra.factors["competition"] == 0
+    assert ra.risk_score == 25  # low_rating 10 + thin_margin 5 + estimated_cost 10
+
+
+def test_no_unknown_factors_when_inputs_present():
+    assert risk_score(cand(), prod(), S).unknown == []
+
+
+def test_partial_unknown_factors():
+    ra = risk_score(cand(), prod(offer_count=None), S)
+    assert ra.unknown == ["competition"]

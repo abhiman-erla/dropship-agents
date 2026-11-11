@@ -244,3 +244,123 @@ def test_risk_records_over_risk_and_verdict_drops(tmp_path):
     assert drops["B01"].startswith("risk ") and " > max 60" in drops["B01"]
     assert drops["B02"] == "verdict weak" and drops["B03"] == "verdict avoid"
     assert "B04" not in drops
+
+
+def _canopy_like(asin="B01"):
+    return prod(asin, price_avg90=None, sales_rank_avg90=None, offer_count=None)
+
+
+def test_risk_payload_marks_unknown_factors_null(tmp_path):
+    import json
+    from dropship.buyer import RISK_SYSTEM
+    conn, rid = setup(tmp_path, [cand(cost=100.0)])
+    llm = FakeLLM()
+    run_risk(llm, conn, rid, {"B01": _canopy_like()}, S)
+    user = json.loads(llm.calls[0]["user"])
+    assert user["unknown_factors"] == ["price_volatility", "rank_volatility", "competition"]
+    assert user["factors"]["price_volatility"] is None
+    assert user["factors"]["rank_volatility"] is None
+    assert user["factors"]["competition"] is None
+    assert user["factors"]["low_rating"] == 0
+    assert "not that the risk is low" in RISK_SYSTEM
+
+
+def test_narrative_suffix_for_unknown_factors(tmp_path):
+    conn, rid = setup(tmp_path, [cand(cost=100.0)])
+    run_risk(FakeLLM(), conn, rid, {"B01": _canopy_like()}, S)
+    [p] = db.list_proposals(conn)
+    assert p.narrative == (
+        "fine [risk excludes: price_volatility, rank_volatility, competition - no data]")
+
+
+def test_narrative_suffix_lists_only_missing_factors(tmp_path):
+    conn, rid = setup(tmp_path, [cand(cost=100.0)])
+    run_risk(FakeLLM(), conn, rid, {"B01": prod(offer_count=None)}, S)
+    [p] = db.list_proposals(conn)
+    assert p.narrative == "fine [risk excludes: competition - no data]"
+
+
+def test_fallback_narrative_gets_suffix_too(tmp_path):
+    conn, rid = setup(tmp_path, [cand(cost=100.0, verdict="unreviewed")])
+    run_risk(None, conn, rid, {"B01": _canopy_like()}, S)
+    [p] = db.list_proposals(conn)
+    assert p.narrative == (FALLBACK_NARRATIVE
+                           + " [risk excludes: price_volatility, rank_volatility,"
+                           " competition - no data]")
+
+
+def test_no_suffix_when_all_inputs_present(tmp_path):
+    import json
+    conn, rid = setup(tmp_path, [cand(cost=100.0)])
+    llm = FakeLLM()
+    run_risk(llm, conn, rid, {"B01": prod()}, S)
+    [p] = db.list_proposals(conn)
+    assert p.narrative == "fine"
+    user = json.loads(llm.calls[0]["user"])
+    assert user["unknown_factors"] == [] and None not in user["factors"].values()
+
+
+def _decided(conn, rid, asin, status="approved_manual"):
+    pid = _pending(conn, rid, asin, 1.0)
+    if status != "pending":
+        db.set_proposal_status(conn, pid, status)
+
+
+def test_fallback_skips_pending_and_decided(tmp_path):
+    cands = [cand(a, cost=100.0, verdict="unreviewed", score=sc)
+             for a, sc in [("B01", 0.9), ("B02", 0.8), ("B03", 0.7), ("B04", 0.6),
+                           ("B05", 0.5)]]
+    conn, rid = setup(tmp_path, cands)
+    earlier = db.start_run(conn)
+    _decided(conn, earlier, "B01")
+    _decided(conn, earlier, "B02", "pending")
+    s = india(categories=[1], llm_top_n=2)
+    run_risk(FakeLLM(), conn, rid, {c.asin: prod(c.asin) for c in cands}, s)
+    new = sorted(p.asin for p in db.list_proposals(conn) if p.run_id == rid)
+    assert new == ["B03", "B04"]
+    drops = {d["asin"]: d["reason"] for d in db.get_dropped(conn, rid)}
+    assert drops == {"B01": "cooldown: decided within 30 days",
+                     "B05": "not in top 2 by score"}
+
+
+def test_top_n_drop_reason_when_verdicts_exist(tmp_path):
+    conn, rid = setup(tmp_path, [cand("B01", cost=100.0, score=0.9),
+                                 cand("B02", verdict="weak", score=0.8),
+                                 cand("B03", verdict="unreviewed", score=0.1)])
+    s = india(categories=[1], llm_top_n=2)
+    run_risk(FakeLLM(), conn, rid, {a: prod(a) for a in ("B01", "B02", "B03")}, s)
+    drops = {d["asin"]: d["reason"] for d in db.get_dropped(conn, rid)}
+    assert drops == {"B02": "verdict weak", "B03": "not in top 2 by score"}
+
+
+def test_unit_cost_over_max_order_value_recorded(tmp_path):
+    conn, rid = setup(tmp_path, [cand(cost=6000.0)])
+    llm = FakeLLM()
+    run_risk(llm, conn, rid, {"B01": prod()}, S)
+    assert db.list_proposals(conn) == [] and llm.calls == []
+    [d] = db.get_dropped(conn, rid)
+    assert d["stage"] == "risk"
+    assert d["reason"] == "unit cost 6000.00 exceeds max order value 5000.00"
+
+
+def test_llm_omitted_verdict_keeps_unreviewed_reason(tmp_path):
+    # B02 was within the top N sent to the LLM, but the LLM returned no verdict for it.
+    conn, rid = setup(tmp_path, [cand("B01", cost=100.0, score=0.9),
+                                 cand("B02", verdict="unreviewed", score=0.8)])
+    s = india(categories=[1], llm_top_n=2)
+    run_risk(FakeLLM(), conn, rid, {a: prod(a) for a in ("B01", "B02")}, s)
+    [d] = db.get_dropped(conn, rid)
+    assert (d["asin"], d["reason"]) == ("B02", "verdict unreviewed")
+
+
+def test_fallback_retry_in_same_run_does_not_widen_top_n(tmp_path):
+    # A retried risk stage must not treat this run's own new proposals as "pending
+    # elsewhere" and move on to the next candidates.
+    cands = [cand(a, cost=100.0, verdict="unreviewed", score=sc)
+             for a, sc in [("B01", 0.9), ("B02", 0.8), ("B03", 0.7)]]
+    conn, rid = setup(tmp_path, cands)
+    s = india(categories=[1], llm_top_n=2)
+    products = {c.asin: prod(c.asin) for c in cands}
+    run_risk(FakeLLM(), conn, rid, products, s)
+    run_risk(FakeLLM(), conn, rid, products, s)
+    assert _asins(conn) == ["B01", "B02"]
