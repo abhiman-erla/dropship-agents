@@ -63,10 +63,12 @@ class KeepaClient:
         self._key = api_key
         self._domain = domain
         self._http = http or httpx.Client(base_url="https://api.keepa.com", timeout=30)
+        self.requests_made = 0  # HTTP requests attempted, failed ones included
 
     def _get(self, path: str, params: dict) -> dict:
         # Network errors (httpx.TimeoutException / ConnectError) propagate unchanged;
         # their str() does not include the URL/query string.
+        self.requests_made += 1
         resp = self._http.get(path, params={"key": self._key, "domain": self._domain, **params})
         status = resp.status_code
         try:

@@ -45,6 +45,7 @@ class CanopyClient:
         self._domain = domain
         self._http = http or httpx.Client(base_url="https://rest.canopyapi.co", timeout=30)
         self._cache: dict[str, Product] = {}
+        self.requests_made = 0  # HTTP requests attempted, failed ones included
         # One request per category per client (i.e. per run), even across stage retries.
         self._lists: dict[str, list[str]] = {}
 
@@ -60,6 +61,7 @@ class CanopyClient:
         if category in self._lists:
             return list(self._lists[category])
         # Network errors propagate unchanged; the key travels in a header, not the URL.
+        self.requests_made += 1
         resp = self._http.get(
             PATH,
             params={"categoryId": category, "domain": self._domain, "page": 1},

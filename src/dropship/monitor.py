@@ -23,6 +23,7 @@ from dropship.db import (
     last_success,
     list_proposals,
     llm_tokens_today,
+    record_source_requests,
     record_stage,
     start_run,
 )
@@ -127,6 +128,7 @@ def run_pipeline(
     else:
         risk_result = run_stage("risk", risk, sleep)
     record_stage(conn, run_id, risk_result, started, datetime.now().isoformat())
+    record_source_requests(conn, run_id, s.data_source, getattr(keepa, "requests_made", 0))
 
     status = max(
         (r.status for r in (research_result, risk_result) if r.status != "skipped"),

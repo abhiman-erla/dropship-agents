@@ -67,6 +67,13 @@ CREATE TABLE IF NOT EXISTS dropped (
     stage TEXT NOT NULL,
     reason TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS source_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL REFERENCES runs(id),
+    source TEXT NOT NULL,
+    count INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -291,3 +298,20 @@ def get_stage_runs(conn: sqlite3.Connection, run_id: int) -> list[dict]:
 def latest_run_id(conn: sqlite3.Connection) -> int | None:
     row = conn.execute("SELECT MAX(id) FROM runs").fetchone()
     return int(row[0]) if row and row[0] is not None else None
+
+
+def record_source_requests(conn: sqlite3.Connection, run_id: int, source: str, count: int) -> None:
+    conn.execute(
+        "INSERT INTO source_requests (run_id, source, count, created_at) VALUES (?, ?, ?, ?)",
+        (run_id, source, count, _now()),
+    )
+    conn.commit()
+
+
+def source_requests_in_month(conn: sqlite3.Connection, source: str, year: int, month: int) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(SUM(count), 0) FROM source_requests"
+        " WHERE source = ? AND created_at LIKE ? || '%'",
+        (source, f"{year:04d}-{month:02d}"),
+    ).fetchone()
+    return int(row[0])
