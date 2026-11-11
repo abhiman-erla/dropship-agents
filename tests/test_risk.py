@@ -1,8 +1,8 @@
-from dropship.config import Settings
+from _india import india
 from dropship.models import Candidate, Product
 from dropship.risk import risk_score
 
-S = Settings(categories=[1])
+S = india(categories=[1])
 
 
 def cand(margin_pct=0.30, source="estimated"):

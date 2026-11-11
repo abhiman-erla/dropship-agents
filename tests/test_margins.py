@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from _india import india
 from dropship.config import Settings
 from dropship.margins import (
     build_candidates,
@@ -31,7 +32,7 @@ def make_product(**kw) -> Product:
 
 @pytest.fixture
 def s() -> Settings:
-    return Settings(categories=[1])
+    return india(categories=[1])
 
 
 def test_margin_formula(s):

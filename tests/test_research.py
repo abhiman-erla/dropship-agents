@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from dropship.config import Settings
+from _india import india
 from dropship.db import connect, get_candidates, record_llm_usage, start_run
 from dropship.llm import LLM, LLMUnusable
 from dropship.models import Product
@@ -55,7 +55,7 @@ def conn(tmp_path):
 
 
 def settings(tmp_path, **kw):
-    return Settings(categories=[1], supplier_quotes_path=tmp_path / "none.csv", **kw)
+    return india(categories=[1], supplier_quotes_path=tmp_path / "none.csv", **kw)
 
 
 def setup(conn, tmp_path, parsed, **kw):
@@ -146,7 +146,7 @@ def test_asins_deduplicated_across_categories(conn, tmp_path):
     products = {"B0A": prod("B0A"), "B0B": prod("B0B")}
     keepa = FakeKeepa({1: ["B0A", "B0B"], 2: ["B0B", "B0A"]}, products)
     run_id = start_run(conn)
-    s = Settings(categories=[1, 2], supplier_quotes_path=tmp_path / "none.csv")
+    s = india(categories=[1, 2], supplier_quotes_path=tmp_path / "none.csv")
     run_research(keepa, None, conn, run_id, s)
     assert keepa.requested == [["B0A", "B0B"]]
 
@@ -165,7 +165,7 @@ def test_bestsellers_truncated_per_category_before_dedup(conn, tmp_path):
     products = {a: prod(a) for a in ["B0A", "B0B", "B0C", "B0D"]}
     keepa = FakeKeepa({1: ["B0A", "B0B", "B0C"], 2: ["B0B", "B0D", "B0C"]}, products)
     run_id = start_run(conn)
-    s = Settings(categories=[1, 2], supplier_quotes_path=tmp_path / "none.csv",
+    s = india(categories=[1, 2], supplier_quotes_path=tmp_path / "none.csv",
                  max_asins_per_category=2)
     run_research(keepa, None, conn, run_id, s)
     assert keepa.requested == [["B0A", "B0B", "B0D"]]

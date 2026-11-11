@@ -1,7 +1,7 @@
 # dropship
 
 Daily research and risk-check agents for an Amazon dropshipping workflow. Amazon data comes only
-from the Keepa API (no scraping). **Nothing is ever purchased automatically**: you review
+from the Canopy API (default, free tier) or the Keepa API (no scraping). **Nothing is ever purchased automatically**: you review
 proposals and place orders yourself.
 
 ## Setup
@@ -13,19 +13,31 @@ pip install -e .
 copy config.example.toml config.toml
 ```
 
-Edit `config.toml` and set `categories` (Keepa category ids; required). Relative paths in the
+Edit `config.toml` and set `categories` (Canopy category id strings such as `"bestsellers_kitchen"`, or Keepa integer ids; required). Relative paths in the
 config (database, reports, supplier quotes) are resolved against the config file's folder.
 
 Environment variables (secrets are never stored in the DB, reports or logs):
 
-- `KEEPA_API_KEY` - required for `python -m dropship run`.
+- `CANOPY_API_KEY` - required for `python -m dropship run` when `data_source = "canopy"` (the default).
+- `KEEPA_API_KEY` - required instead when `data_source = "keepa"`.
 - `ANTHROPIC_API_KEY` - needed unless you have run `ant auth login`. Without any credentials the
   run degrades to deterministic scoring only.
 - `ALERT_WEBHOOK_URL` - optional; notified when a run is degraded or failed.
 
+## Canopy demo setup (US, $0)
+
+Sign up at Canopy API for a free key (the free tier allows 100 requests per month; the pipeline
+makes one request per category per run) and export `CANOPY_API_KEY`. The defaults target a US
+demo: `data_source = "canopy"`, `canopy_domain = "US"`, prices 15-60 USD, order cap 300 USD.
+
+Demo limits: Canopy best-sellers gives no price or rank history and no seller (offer) count, so
+`price_avg90` and `sales_rank_avg90` are empty and `offer_count` is unknown (the offer filter is
+skipped). The best-seller list position is used as the sales rank (`max_sales_rank = 50`). Set
+`data_source = "keepa"` for history and offer counts.
+
 ## What the agents do
 
-**Research** pulls candidate products in your categories from Keepa, filters them by price, rank,
+**Research** pulls candidate products in your categories from the data source, filters them by price, rank,
 rating, reviews and offer count, and estimates margin from your supplier quotes (or the
 `est_cost_ratio` fallback). A cheap LLM pass then judges the top candidates.
 

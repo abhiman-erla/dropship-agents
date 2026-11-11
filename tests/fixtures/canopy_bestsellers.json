@@ -1,0 +1,17 @@
+{
+  "data": {
+    "amazonBestSellers": {
+      "productResults": {
+        "results": [
+          {"asin": "B0CANOPY01", "title": "Silicone Spatula Set", "bestSellersRank": 1,
+           "rating": 4.6, "ratingsTotal": 1000,
+           "price": {"value": 29.99, "currency": "USD", "symbol": "$", "display": "$29.99"}},
+          {"asin": "B0CANOPY02", "title": "No Price Item", "bestSellersRank": 2,
+           "rating": 4.4, "ratingsTotal": 250},
+          {"asin": "B0CANOPY03", "title": "Null Price Item", "bestSellersRank": 3,
+           "rating": 4.1, "ratingsTotal": 80, "price": null}
+        ]
+      }
+    }
+  }
+}

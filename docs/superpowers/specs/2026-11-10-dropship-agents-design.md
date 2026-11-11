@@ -55,27 +55,30 @@ A scheduled Python pipeline with three agents that (1) find Amazon best-sellers 
 ## Default config values
 
 ```
-keepa_domain = 10            # 10 = amazon.in, 1 = amazon.com
-categories = []              # Keepa category ids; required
-price_min = 300.0
-price_max = 3000.0
-max_sales_rank = 50000
+data_source = "canopy"       # "canopy" or "keepa"
+canopy_domain = "US"
+keepa_domain = 1             # 1 = amazon.com, 10 = amazon.in
+categories = []              # Canopy category ids (str) or Keepa ids (int); required
+price_min = 15.0
+price_max = 60.0
+max_sales_rank = 50          # Canopy: best-seller list position
 min_rating = 4.0
 min_reviews = 50
 max_offer_count = 15
 fee_pct = 0.15
-shipping_cost = 60.0
+shipping_cost = 5.0
 est_cost_ratio = 0.35
 min_margin_pct = 0.25
 llm_top_n = 20
 daily_llm_token_budget = 200000
 max_risk_score = 60
-max_order_value = 5000.0
-daily_spend_cap = 15000.0
+max_order_value = 300.0
+daily_spend_cap = 1000.0
 max_units_per_order = 20
-max_asins_per_category = 100  # best-seller lists are rank-ordered; keeps Keepa token use bounded
+max_asins_per_category = 50   # best-seller lists are rank-ordered; keeps data-source use bounded
 ```
-Money is in the marketplace currency (₹ for domain 10).
+Money is in the marketplace currency (USD for the US demo; ₹ for Keepa domain 10).
+Data sources: Canopy (default, $0 tier, best-sellers only, no history or offer counts) or Keepa.
 
 ## Out of scope
 

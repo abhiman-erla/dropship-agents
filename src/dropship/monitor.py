@@ -25,7 +25,8 @@ from dropship.db import (
     record_stage,
     start_run,
 )
-from dropship.keepa_client import KeepaClient, KeepaError, KeepaOutOfTokens
+from dropship.errors import DataSourceError
+from dropship.keepa_client import KeepaClient, KeepaOutOfTokens
 from dropship.llm import LLM
 from dropship.models import Product, Proposal, StageResult
 from dropship.research import run_research
@@ -50,10 +51,10 @@ def _is_transient(exc: Exception) -> bool:
     if isinstance(exc, TRANSIENT):
         return True
     return (
-        isinstance(exc, KeepaError)
+        isinstance(exc, DataSourceError)
         and not isinstance(exc, KeepaOutOfTokens)
         and exc.status_code is not None
-        and exc.status_code >= 500
+        and (exc.status_code == 429 or exc.status_code >= 500)
     )
 
 

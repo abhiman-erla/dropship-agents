@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import httpx
 
+from dropship.errors import DataSourceError
 from dropship.models import Product
 
 # Indexes into Keepa's stats.current / stats.avg90 arrays.
@@ -15,10 +16,8 @@ CHUNK_SIZE = 100
 DEFAULT_REFILL_MS = 60000
 
 
-class KeepaError(Exception):
-    def __init__(self, message: str, status_code: int | None = None):
-        super().__init__(message)
-        self.status_code = status_code
+class KeepaError(DataSourceError):
+    pass
 
 
 class KeepaOutOfTokens(KeepaError):

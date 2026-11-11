@@ -29,7 +29,7 @@ RISK_SYSTEM = (
     "suggestion before anything is bought."
 )
 
-FALLBACK_NARRATIVE = "LLM unavailable — deterministic risk only"
+FALLBACK_NARRATIVE = "LLM unavailable - deterministic risk only"
 
 
 class RiskNote(BaseModel):

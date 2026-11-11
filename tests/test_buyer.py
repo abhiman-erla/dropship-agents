@@ -3,11 +3,11 @@ import pytest
 from dropship import db
 from dropship.buyer import (FALLBACK_NARRATIVE, ApprovalError, RecordOnlyPurchaser, RiskNote,
                             approve, reject, run_risk)
-from dropship.config import Settings
+from _india import india
 from dropship.llm import LLMBudgetExceeded, LLMUnusable
 from dropship.models import Candidate, Product, Proposal
 
-S = Settings(categories=[1])
+S = india(categories=[1])
 
 
 class FakeLLM:
@@ -161,7 +161,7 @@ def test_approve_over_order_value_refused(tmp_path):
 
 
 def test_daily_cap_counts_prior_approvals(tmp_path):
-    s = Settings(categories=[1], max_order_value=10000.0, daily_spend_cap=15000.0)
+    s = india(categories=[1], max_order_value=10000.0, daily_spend_cap=15000.0)
     conn, rid = setup(tmp_path, [])
     a = _pending(conn, rid, "B01", 9000.0)
     b = _pending(conn, rid, "B02", 7000.0)
@@ -188,7 +188,7 @@ def test_unreviewed_skipped_when_verdicts_exist(tmp_path):
     conn, rid = setup(tmp_path, [cand("B01", cost=100.0, score=2.0),
                                  cand("B02", cost=100.0, verdict="unreviewed", score=1.0)])
     llm = FakeLLM()
-    s = Settings(categories=[1], llm_top_n=1)
+    s = india(categories=[1], llm_top_n=1)
     run_risk(llm, conn, rid, {"B01": prod(), "B02": prod("B02")}, s)
     assert _asins(conn) == ["B01"] and len(llm.calls) == 1
 
@@ -197,7 +197,7 @@ def test_all_unreviewed_falls_back_to_top_n_by_score(tmp_path):
     cands = [cand(a, cost=100.0, verdict="unreviewed", score=sc)
              for a, sc in [("B01", 0.1), ("B02", 0.9), ("B03", 0.5)]]
     conn, rid = setup(tmp_path, cands)
-    s = Settings(categories=[1], llm_top_n=2)
+    s = india(categories=[1], llm_top_n=2)
     run_risk(FakeLLM(), conn, rid, {c.asin: prod(c.asin) for c in cands}, s)
     assert _asins(conn) == ["B02", "B03"]
 

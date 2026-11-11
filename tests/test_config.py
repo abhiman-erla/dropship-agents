@@ -13,10 +13,10 @@ def _write(tmp_path: Path, text: str) -> Path:
 
 def test_defaults_match_spec(tmp_path):
     s = load_config(_write(tmp_path, "categories = [1350380031]\n"))
-    assert s.keepa_domain == 10
+    assert s.keepa_domain == 1
     assert s.min_margin_pct == 0.25
     assert s.llm_top_n == 20
-    assert s.daily_spend_cap == 15000.0
+    assert s.daily_spend_cap == 1000.0
     assert s.max_risk_score == 60
 
 
@@ -56,4 +56,4 @@ def test_malformed_toml_raises_config_error(tmp_path):
 
 
 def test_max_asins_per_category_default(tmp_path):
-    assert load_config(_write(tmp_path, "categories = [1]\n")).max_asins_per_category == 100
+    assert load_config(_write(tmp_path, "categories = [1]\n")).max_asins_per_category == 50

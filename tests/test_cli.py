@@ -7,9 +7,12 @@ from dropship.config import Settings
 from dropship.models import Proposal
 
 
+KEEPA_CFG = 'data_source = "keepa"\n'
+
+
 def _write_cfg(tmp_path: Path, extra: str = "") -> Path:
     cfg = tmp_path / "config.toml"
-    cfg.write_text(f"categories = [1]\n{extra}", encoding="utf-8")
+    cfg.write_text(f"categories = [1]\nmax_order_value = 5000.0\ndaily_spend_cap = 15000.0\n{extra}", encoding="utf-8")
     return cfg
 
 
@@ -50,10 +53,56 @@ def test_invalid_config_exits_2(tmp_path, capsys):
 
 def test_missing_keepa_key_exits_2(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("KEEPA_API_KEY", raising=False)
-    cfg = _write_cfg(tmp_path)
+    cfg = _write_cfg(tmp_path, KEEPA_CFG)
     assert cli.main(["--config", str(cfg), "run"]) == 2
     assert "KEEPA_API_KEY" in capsys.readouterr().err
     assert not (tmp_path / "data").exists()
+
+
+def test_cli_missing_canopy_key_exits_2(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("CANOPY_API_KEY", raising=False)
+    cfg = _write_cfg(tmp_path)
+    assert cli.main(["--config", str(cfg), "run"]) == 2
+    assert "CANOPY_API_KEY" in capsys.readouterr().err
+    assert not (tmp_path / "data").exists()
+
+
+def test_cli_builds_keepa_client(tmp_path, monkeypatch):
+    monkeypatch.setenv("KEEPA_API_KEY", "k")
+    sentinel = object()
+    monkeypatch.setattr(cli, "KeepaClient", lambda key, domain: sentinel)
+    got = {}
+
+    def fake_pipeline(conn, s, keepa, llm_factory):
+        got["client"] = keepa
+        run_id = db.start_run(conn)
+        db.finish_run(conn, run_id, "ok")
+        return run_id
+
+    monkeypatch.setattr(cli, "run_pipeline", fake_pipeline)
+    cfg = _write_cfg(tmp_path, KEEPA_CFG)
+    assert cli.main(["--config", str(cfg), "run"]) == 0
+    assert got["client"] is sentinel
+
+
+def test_cli_builds_canopy_client(tmp_path, monkeypatch):
+    monkeypatch.setenv("CANOPY_API_KEY", "ck")
+    made = {}
+
+    def fake_canopy(key, domain):
+        made["args"] = (key, domain)
+        return object()
+
+    monkeypatch.setattr(cli, "CanopyClient", fake_canopy)
+
+    def fake_pipeline(conn, s, keepa, llm_factory):
+        run_id = db.start_run(conn)
+        db.finish_run(conn, run_id, "ok")
+        return run_id
+
+    monkeypatch.setattr(cli, "run_pipeline", fake_pipeline)
+    assert cli.main(["--config", str(_write_cfg(tmp_path)), "run"]) == 0
+    assert made["args"] == ("ck", "US")
 
 
 def test_approve_flow(tmp_path, capsys):
@@ -112,7 +161,7 @@ def test_run_prints_summary(tmp_path, monkeypatch, capsys):
         return run_id
 
     monkeypatch.setattr(cli, "run_pipeline", fake_pipeline)
-    cfg = _write_cfg(tmp_path)
+    cfg = _write_cfg(tmp_path, KEEPA_CFG)
     assert cli.main(["--config", str(cfg), "run"]) == 0
     out = capsys.readouterr().out
     assert "ok" in out and "reports" in out
@@ -128,7 +177,7 @@ def test_run_failed_status_exits_1(tmp_path, monkeypatch):
         return run_id
 
     monkeypatch.setattr(cli, "run_pipeline", fake_pipeline)
-    assert cli.main(["--config", str(_write_cfg(tmp_path)), "run"]) == 1
+    assert cli.main(["--config", str(_write_cfg(tmp_path, KEEPA_CFG)), "run"]) == 1
 
 
 def test_llm_factory_returns_none_when_anthropic_unavailable(tmp_path, monkeypatch):

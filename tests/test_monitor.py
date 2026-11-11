@@ -5,8 +5,9 @@ import httpx
 import pytest
 
 from dropship import monitor
-from dropship.config import Settings
+from _india import india
 from dropship.db import connect, insert_proposal, record_stage, save_candidates, start_run
+from dropship.canopy_client import CanopyError
 from dropship.keepa_client import KeepaError, KeepaOutOfTokens
 from dropship.models import Candidate, Proposal, StageResult
 from dropship.monitor import maybe_alert, run_pipeline, run_stage, write_report
@@ -83,6 +84,20 @@ def test_keepa_out_of_tokens_twice_fails():
     assert sl.calls == [5.0] and r.attempts == 2
 
 
+def test_canopy_429_is_transient():
+    n = {"i": 0}
+
+    def fn():
+        n["i"] += 1
+        if n["i"] == 1:
+            raise CanopyError("rate limited", status_code=429)
+        return _ok()
+
+    sl = Sleeper()
+    r = run_stage("research", fn, sl)
+    assert r.status == "ok" and r.attempts == 2
+
+
 def test_keepa_5xx_is_transient():
     n = {"i": 0}
 
@@ -114,7 +129,7 @@ class BoomKeepa:
 
 
 def _settings(tmp_path):
-    return Settings(
+    return india(
         categories=[1], db_path=tmp_path / "t.db", reports_dir=tmp_path / "reports"
     )
 

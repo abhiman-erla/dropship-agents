@@ -12,6 +12,7 @@ import anthropic
 
 from dropship import db
 from dropship.buyer import ApprovalError, RecordOnlyPurchaser, approve, reject
+from dropship.canopy_client import CanopyClient
 from dropship.config import ConfigError, Settings, load_config
 from dropship.keepa_client import KeepaClient
 from dropship.llm import LLM
@@ -43,8 +44,11 @@ def make_llm_factory(conn: sqlite3.Connection, s: Settings) -> Callable[[int], L
 
 
 def _cmd_run(conn: sqlite3.Connection, s: Settings, args: argparse.Namespace) -> int:
-    keepa = KeepaClient(os.environ["KEEPA_API_KEY"], s.keepa_domain)
-    run_id = run_pipeline(conn, s, keepa, make_llm_factory(conn, s))
+    if s.data_source == "canopy":
+        client = CanopyClient(os.environ["CANOPY_API_KEY"], s.canopy_domain)
+    else:
+        client = KeepaClient(os.environ["KEEPA_API_KEY"], s.keepa_domain)
+    run_id = run_pipeline(conn, s, client, make_llm_factory(conn, s))
     run = db.get_run(conn, run_id)
     status = run["status"] if run else "unknown"
     print(f"Run {run_id}: {status}")
@@ -71,7 +75,7 @@ def _cmd_approve(conn: sqlite3.Connection, s: Settings, args: argparse.Namespace
     except ApprovalError as exc:
         print(exc, file=sys.stderr)
         return 1
-    print(f"Approved #{args.id} — reference {ref}. Place this order with your supplier.")
+    print(f"Approved #{args.id} - reference {ref}. Place this order with your supplier.")
     return 0
 
 
@@ -126,10 +130,12 @@ def main(argv: list[str] | None = None) -> int:
     except (ConfigError, OSError) as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
-    if args.command == "run" and not os.environ.get("KEEPA_API_KEY"):
-        print("KEEPA_API_KEY is not set; export it before running `dropship run`.",
-              file=sys.stderr)
-        return 2
+    if args.command == "run":
+        key_name = "CANOPY_API_KEY" if s.data_source == "canopy" else "KEEPA_API_KEY"
+        if not os.environ.get(key_name):
+            print(f"{key_name} is not set; export it before running `dropship run`.",
+                  file=sys.stderr)
+            return 2
     conn = db.connect(s.db_path)
     try:
         return _COMMANDS[args.command](conn, s, args)
