@@ -329,3 +329,45 @@ def test_web_does_not_create_db(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "_serve", lambda app, host, p: None)
     assert cli.main(["--config", str(cfg), "web", "--port", str(port)]) == 0
     assert not (tmp_path / "data" / "dropship.db").exists()
+
+
+def _old_db(tmp_path: Path) -> Path:
+    import sqlite3
+    path = tmp_path / "data" / "dropship.db"
+    path.parent.mkdir(parents=True)
+    conn = sqlite3.connect(path)
+    conn.executescript(db._SCHEMA.split("CREATE TABLE IF NOT EXISTS dropped")[0])
+    conn.execute("INSERT INTO runs (started_at, status) VALUES ('2026-01-01T00:00:00', 'success')")
+    conn.commit()
+    conn.close()
+    return path
+
+
+def _free_port() -> int:
+    import socket
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def test_web_upgrades_old_db_schema(tmp_path, monkeypatch):
+    import sqlite3
+    path = _old_db(tmp_path)
+    cfg = _write_cfg(tmp_path)
+    monkeypatch.setattr(cli, "_serve", lambda app, host, p: None)
+    assert cli.main(["--config", str(cfg), "web", "--port", str(_free_port())]) == 0
+    conn = sqlite3.connect(path)
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    runs = conn.execute("SELECT started_at, status FROM runs").fetchall()
+    conn.close()
+    assert {"source_requests", "dropped"} <= tables
+    assert runs == [("2026-01-01T00:00:00", "success")]
+
+
+def test_dashboard_renders_on_upgraded_old_db(tmp_path):
+    from fastapi.testclient import TestClient
+    _old_db(tmp_path)
+    s = cli.resolve_paths(Settings(categories=["x"]), tmp_path / "config.toml")
+    apps = []
+    assert cli._cmd_web(s, _free_port(), serve=lambda app, h, p: apps.append(app)) == 0
+    assert TestClient(apps[0]).get("/").status_code == 200

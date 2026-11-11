@@ -124,6 +124,13 @@ def _cmd_web(s: Settings, port: int, serve: Callable | None = None) -> int:
     if not _port_is_free(port):
         print(f"port {port} is busy, try --port {port + 1}", file=sys.stderr)
         return 1
+    if Path(s.db_path).exists():
+        # Older DBs may lack newer tables; the read-only site cannot upgrade them.
+        conn = sqlite3.connect(s.db_path)
+        try:
+            db.init_schema(conn)
+        finally:
+            conn.close()
     print(f"Dashboard: http://localhost:{port}  (Ctrl+C to stop)")
     (serve or _serve)(create_app(s), "127.0.0.1", port)
     return 0
