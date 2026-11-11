@@ -114,3 +114,43 @@ def test_get_candidate(tmp_path):
     assert db.get_candidate(conn, r1, "B02") == _cand("B02", 0.5)
     assert db.get_candidate(conn, r1, "B99") is None
     assert db.get_candidate(conn, r2, "B01") is None
+
+
+def _decided_prop(conn, run_id, asin, status="approved_manual"):
+    pid = db.insert_proposal(conn, _prop(run_id, asin, 10.0))
+    if status != "pending":
+        db.set_proposal_status(conn, pid, status)
+    return pid
+
+
+def test_recently_decided(tmp_path):
+    from datetime import datetime, timedelta
+    conn = db.connect(tmp_path / "t.db")
+    run_id = db.start_run(conn)
+    pid = _decided_prop(conn, run_id, "B01")
+    assert db.recently_decided(conn, "B01", 30) is True
+    assert db.recently_decided(conn, "B01", 0) is False
+    assert db.recently_decided(conn, "B99", 30) is False
+    old = (datetime.now() - timedelta(days=31)).isoformat()
+    conn.execute("UPDATE proposals SET decided_at = ? WHERE id = ?", (old, pid))
+    conn.commit()
+    assert db.recently_decided(conn, "B01", 30) is False
+    _decided_prop(conn, run_id, "B02", "pending")
+    assert db.recently_decided(conn, "B02", 30) is False
+    _decided_prop(conn, run_id, "B03", "rejected")
+    assert db.recently_decided(conn, "B03", 30) is True
+
+
+def test_dropped_roundtrip_and_schema_upgrade(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    conn.execute("DROP TABLE dropped")
+    db.init_schema(conn)  # existing DBs without the table keep working
+    run_id = db.start_run(conn)
+    db.record_dropped(conn, run_id, [("B01", "T1", "research", "missing price"),
+                                     ("B02", "T2", "risk", "verdict weak")])
+    db.record_dropped(conn, run_id, [])
+    assert db.get_dropped(conn, run_id) == [
+        {"asin": "B01", "title": "T1", "stage": "research", "reason": "missing price"},
+        {"asin": "B02", "title": "T2", "stage": "risk", "reason": "verdict weak"},
+    ]
+    assert db.get_dropped(conn, run_id + 1) == []

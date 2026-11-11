@@ -7,10 +7,10 @@ from typing import Literal
 from pydantic import BaseModel
 
 from dropship.config import Settings
-from dropship.db import save_candidates
+from dropship.db import record_dropped, save_candidates
 from dropship.keepa_client import KeepaClient
 from dropship.llm import LLM, LLMBudgetExceeded, LLMUnusable
-from dropship.margins import build_candidates, load_supplier_quotes
+from dropship.margins import build_candidates, explain_drops, load_supplier_quotes
 from dropship.models import Candidate, Product, StageResult
 
 RESEARCH_MODEL = "claude-haiku-5-5"
@@ -103,6 +103,10 @@ def run_research(
                 status, error_type, message = "degraded", type(e).__name__, str(e)
 
     save_candidates(conn, run_id, candidates)
+    record_dropped(
+        conn, run_id,
+        [(a, t, "research", r) for a, t, r in explain_drops(fetched, quotes, s)],
+    )
     return (
         StageResult(
             stage="research", status=status, attempts=1, error_type=error_type, message=message

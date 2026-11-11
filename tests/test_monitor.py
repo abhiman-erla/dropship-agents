@@ -356,3 +356,20 @@ def test_network_errors_are_transient(exc):
 
     sl = Sleeper()
     assert run_stage("research", fn, sl).status == "ok" and sl.calls == [2]
+
+
+def test_report_lists_dropped_products(tmp_path):
+    s = _settings(tmp_path)
+    conn = connect(s.db_path)
+    run_id = start_run(conn)
+    from dropship.db import record_dropped
+    record_dropped(conn, run_id, [("B01", "A|B title", "research", "missing price"),
+                                  ("B02", "X" * 80, "risk", "verdict weak")])
+    text = write_report(conn, run_id, s).read_text(encoding="utf-8")
+    assert text.index("## Proposals awaiting approval") < text.index("## Dropped products") < text.index("## Errors")
+    assert "| ASIN | Title | Stage | Reason |" in text
+    assert "| B01 | A/B title | research | missing price |" in text
+    assert "| B02 | " + "X" * 60 + " | risk | verdict weak |" in text
+    empty = start_run(conn)
+    seg = write_report(conn, empty, s).read_text(encoding="utf-8").split("## Dropped products")[1]
+    assert seg.lstrip().startswith("None.")

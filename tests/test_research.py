@@ -169,3 +169,12 @@ def test_bestsellers_truncated_per_category_before_dedup(conn, tmp_path):
                  max_asins_per_category=2)
     run_research(keepa, None, conn, run_id, s)
     assert keepa.requested == [["B0A", "B0B", "B0D"]]
+
+
+def test_research_records_drops(conn, tmp_path):
+    from dropship.db import get_dropped
+    parsed = Verdicts(items=[])
+    keepa, client, run_id, s, llm = setup(conn, tmp_path, parsed)
+    run_research(keepa, llm, conn, run_id, s)
+    [d] = get_dropped(conn, run_id)
+    assert d["asin"] == "B0C" and d["stage"] == "research" and d["reason"] == "missing price"

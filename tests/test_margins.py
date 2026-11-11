@@ -124,3 +124,14 @@ def test_load_supplier_quotes_rejects_bad_values(tmp_path: Path, bad):
     f = tmp_path / "q.csv"
     f.write_text(f"asin,unit_cost\nA1,{bad}\nA2,50\n", encoding="utf-8")
     assert load_supplier_quotes(f) == {"A2": 50.0}
+
+
+def test_explain_drops_reasons(s):
+    from dropship.margins import explain_drops
+    good = make_product(asin="G")
+    noprice = make_product(asin="N", title="No price", price=None)
+    thin = make_product(asin="T", title="Thin")
+    drops = explain_drops([good, noprice, thin], {"T": 900.0}, s)
+    assert [d[0] for d in drops] == ["N", "T"]
+    assert drops[0] == ("N", "No price", "missing price")
+    assert drops[1][2].startswith("margin ") and "below min 25%" in drops[1][2]

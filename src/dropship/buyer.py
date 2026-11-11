@@ -13,6 +13,8 @@ from dropship.db import (
     get_proposal,
     has_pending_proposal,
     insert_proposal,
+    record_dropped,
+    recently_decided,
     set_proposal_status,
 )
 from dropship.llm import LLM, LLMBudgetExceeded, LLMUnusable
@@ -73,12 +75,26 @@ def run_risk(
     s: Settings,
 ) -> StageResult:
     degraded_error = ""
-    for c in _best_candidates(get_candidates(conn, run_id), s):
+    all_cands = get_candidates(conn, run_id)
+    best = _best_candidates(all_cands, s)
+    best_ids = {id(c) for c in best}
+    drops: list[tuple[str, str, str, str]] = [
+        (c.asin, c.title, "risk", f"verdict {c.llm_verdict}")
+        for c in all_cands
+        if id(c) not in best_ids
+    ]
+    for c in best:
         product = products.get(c.asin)
-        if product is None:
+        if product is None or has_pending_proposal(conn, c.asin):
+            continue
+        if recently_decided(conn, c.asin, s.proposal_cooldown_days):
+            drops.append((c.asin, c.title, "risk",
+                          f"cooldown: decided within {s.proposal_cooldown_days} days"))
             continue
         ra = risk_score(c, product, s)
-        if ra.risk_score > s.max_risk_score or has_pending_proposal(conn, c.asin):
+        if ra.risk_score > s.max_risk_score:
+            drops.append((c.asin, c.title, "risk",
+                          f"risk {ra.risk_score} > max {s.max_risk_score}"))
             continue
 
         narrative = FALLBACK_NARRATIVE
@@ -128,6 +144,7 @@ def run_risk(
                 status="pending",
             ),
         )
+    record_dropped(conn, run_id, drops)
     if degraded_error:
         return StageResult(
             stage="risk", status="degraded", attempts=1, error_type=degraded_error,

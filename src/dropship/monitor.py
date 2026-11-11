@@ -17,6 +17,7 @@ from dropship.db import (
     finish_run,
     get_candidate,
     get_candidates,
+    get_dropped,
     get_run,
     get_stage_runs,
     last_success,
@@ -214,6 +215,18 @@ def write_report(conn: sqlite3.Connection, run_id: int, s: Settings) -> Path:
             )
             lines.append(f"  - {title} - unit {p.unit_cost:.2f} ({cost})")
             lines.append(f"  - {narrative}")
+    else:
+        lines.append("None.")
+    lines.append("")
+
+    lines += ["## Dropped products", ""]
+    dropped = get_dropped(conn, run_id)
+    if dropped:
+        lines += ["| ASIN | Title | Stage | Reason |", "|---|---|---|---|"]
+        for d in dropped:
+            title = d["title"][:60].replace("|", "/")
+            reason = d["reason"].replace("|", "/")
+            lines.append(f"| {d['asin']} | {title} | {d['stage']} | {reason} |")
     else:
         lines.append("None.")
     lines.append("")

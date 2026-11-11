@@ -66,6 +66,34 @@ def score(p: Product, margin_pct: float, s: Settings) -> float:
     return 0.5 * margin_norm + 0.3 * rank_norm + 0.2 * rating_norm
 
 
+def _cost_for(p: Product, quotes: dict[str, float], s: Settings) -> tuple[float, str]:
+    assert p.price is not None
+    if p.asin in quotes:
+        return quotes[p.asin], "quoted"
+    return p.price * s.est_cost_ratio, "estimated"
+
+
+def explain_drops(
+    products: list[Product], quotes: dict[str, float], s: Settings
+) -> list[tuple[str, str, str]]:
+    """(asin, title, reason) for every product `build_candidates` would not keep."""
+    out: list[tuple[str, str, str]] = []
+    for p in products:
+        ok, reason = passes_filter(p, s)
+        if not ok:
+            out.append((p.asin, p.title, reason))
+            continue
+        assert p.price is not None
+        cost, _ = _cost_for(p, quotes, s)
+        _, margin_pct = compute_margin(p.price, cost, s)
+        if margin_pct < s.min_margin_pct:
+            out.append(
+                (p.asin, p.title,
+                 f"margin {margin_pct:.0%} below min {s.min_margin_pct:.0%}")
+            )
+    return out
+
+
 def build_candidates(
     products: list[Product], quotes: dict[str, float], s: Settings
 ) -> list[Candidate]:
@@ -75,10 +103,7 @@ def build_candidates(
         if not ok:
             continue
         assert p.price is not None
-        if p.asin in quotes:
-            cost, source = quotes[p.asin], "quoted"
-        else:
-            cost, source = p.price * s.est_cost_ratio, "estimated"
+        cost, source = _cost_for(p, quotes, s)
         margin, margin_pct = compute_margin(p.price, cost, s)
         if margin_pct < s.min_margin_pct:
             continue

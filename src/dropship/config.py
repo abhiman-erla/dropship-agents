@@ -38,6 +38,8 @@ class Settings(BaseModel):
     max_units_per_order: int = Field(20, gt=0)
     # best-seller lists are rank-ordered; keeps data-source use bounded
     max_asins_per_category: int = Field(50, gt=0)
+    # an approved/rejected ASIN is not proposed again for this many days (0 = off)
+    proposal_cooldown_days: int = Field(30, ge=0)
     db_path: Path = Path("data/dropship.db")
     reports_dir: Path = Path("reports")
     supplier_quotes_path: Path = Path("supplier_quotes.csv")

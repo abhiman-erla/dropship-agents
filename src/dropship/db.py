@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from dropship.models import Candidate, Proposal, StageResult
@@ -58,6 +58,14 @@ CREATE TABLE IF NOT EXISTS llm_usage (
     input_tokens INTEGER NOT NULL,
     output_tokens INTEGER NOT NULL,
     created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dropped (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL REFERENCES runs(id),
+    asin TEXT NOT NULL,
+    title TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    reason TEXT NOT NULL
 );
 """
 
@@ -186,6 +194,36 @@ def has_pending_proposal(conn: sqlite3.Connection, asin: str) -> bool:
         "SELECT 1 FROM proposals WHERE asin = ? AND status = 'pending' LIMIT 1", (asin,)
     ).fetchone()
     return row is not None
+
+
+def recently_decided(conn: sqlite3.Connection, asin: str, days: int) -> bool:
+    if days <= 0:
+        return False
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    row = conn.execute(
+        "SELECT 1 FROM proposals WHERE asin = ? AND status IN ('approved_manual', 'rejected')"
+        " AND decided_at >= ? LIMIT 1",
+        (asin, cutoff),
+    ).fetchone()
+    return row is not None
+
+
+def record_dropped(
+    conn: sqlite3.Connection, run_id: int, rows: list[tuple[str, str, str, str]]
+) -> None:
+    conn.executemany(
+        "INSERT INTO dropped (run_id, asin, title, stage, reason) VALUES (?, ?, ?, ?, ?)",
+        [(run_id, asin, title, stage, reason) for asin, title, stage, reason in rows],
+    )
+    conn.commit()
+
+
+def get_dropped(conn: sqlite3.Connection, run_id: int) -> list[dict]:
+    rows = conn.execute(
+        "SELECT asin, title, stage, reason FROM dropped WHERE run_id = ? ORDER BY id",
+        (run_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def set_proposal_status(conn: sqlite3.Connection, pid: int, status: str) -> None:

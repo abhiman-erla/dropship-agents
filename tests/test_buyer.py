@@ -218,3 +218,29 @@ def test_llm_unusable_creates_deterministic_proposal(tmp_path):
     assert len(llm.calls) == 1
     [p] = db.list_proposals(conn)
     assert p.qty == 1 and p.narrative == FALLBACK_NARRATIVE and p.total == 100.0
+
+
+def test_cooldown_blocks_reproposal(tmp_path):
+    conn, rid = setup(tmp_path, [cand(cost=100.0)])
+    llm = FakeLLM()
+    run_risk(llm, conn, rid, {"B01": prod()}, S)
+    [p] = db.list_proposals(conn)
+    approve(conn, p.id, S, RecordOnlyPurchaser())
+    rid2 = db.start_run(conn)
+    db.save_candidates(conn, rid2, [cand(cost=100.0)])
+    n = len(llm.calls)
+    run_risk(llm, conn, rid2, {"B01": prod()}, S)
+    assert len(db.list_proposals(conn)) == 1 and len(llm.calls) == n
+    [d] = db.get_dropped(conn, rid2)
+    assert d["stage"] == "risk" and d["reason"] == "cooldown: decided within 30 days"
+
+
+def test_risk_records_over_risk_and_verdict_drops(tmp_path):
+    conn, rid = setup(tmp_path, [cand("B01"), cand("B02", verdict="weak"),
+                                 cand("B03", verdict="avoid"), cand("B04")])
+    hot = prod("B01", price=1700.0, sales_rank=30000, offer_count=15, rating=3.0)
+    run_risk(FakeLLM(), conn, rid, {"B01": hot, "B04": prod("B04")}, S)
+    drops = {d["asin"]: d["reason"] for d in db.get_dropped(conn, rid)}
+    assert drops["B01"].startswith("risk ") and " > max 60" in drops["B01"]
+    assert drops["B02"] == "verdict weak" and drops["B03"] == "verdict avoid"
+    assert "B04" not in drops
