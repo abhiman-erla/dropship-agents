@@ -141,3 +141,13 @@ def test_llm_factory_returns_none_when_anthropic_unavailable(tmp_path, monkeypat
     conn = db.connect(tmp_path / "t.db")
     factory = cli.make_llm_factory(conn, Settings(categories=[1]))
     assert factory(1) is None
+
+
+def test_python_dash_m_dropship_help():
+    import subprocess
+    import sys
+
+    r = subprocess.run([sys.executable, "-m", "dropship", "--help"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0
+    assert "approve" in r.stdout

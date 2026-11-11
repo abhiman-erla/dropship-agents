@@ -18,7 +18,7 @@ config (database, reports, supplier quotes) are resolved against the config file
 
 Environment variables (secrets are never stored in the DB, reports or logs):
 
-- `KEEPA_API_KEY` - required for `dropship run`.
+- `KEEPA_API_KEY` - required for `python -m dropship run`.
 - `ANTHROPIC_API_KEY` - needed unless you have run `ant auth login`. Without any credentials the
   run degrades to deterministic scoring only.
 - `ALERT_WEBHOOK_URL` - optional; notified when a run is degraded or failed.
@@ -41,21 +41,24 @@ approval only.
 
 ## Daily routine
 
-1. Read the latest report in `reports/` (or `dropship report`).
-2. `dropship proposals` lists pending proposals (`--status pending|approved_manual|rejected`).
-3. `dropship approve <id>` or `dropship reject <id>`.
+1. Read the latest report in `reports/` (or `python -m dropship report`).
+2. `.venv\Scripts\python -m dropship proposals` lists pending proposals (`--status pending|approved_manual|rejected`).
+3. `.venv\Scripts\python -m dropship approve <id>` or `... reject <id>`.
+
+The examples use `python -m dropship` because Windows Application Control can block
+`dropship.exe`; plain `dropship <cmd>` also works where the exe isn't blocked.
 
 **Approving only records the order** and prints a reference such as `manual-3`. You then place
 the order with your supplier yourself.
 
-Other commands: `dropship run` (run the pipeline now), `dropship report --run <id>`.
+Other commands: `python -m dropship run` (run the pipeline now), `python -m dropship report --run <id>`.
 Global option: `--config PATH` (default `config.toml`).
 Exit codes: 0 success, 1 failed run or rejected approval, 2 configuration or missing-key error.
 
 ## Scheduling (Windows Task Scheduler)
 
 ```
-schtasks /Create /SC DAILY /ST 08:00 /TN "dropship-run" /TR "G:\vscode\codes\dropship-agents\.venv\Scripts\dropship.exe --config G:\vscode\codes\dropship-agents\config.toml run"
+schtasks /Create /SC DAILY /ST 08:00 /TN "dropship-run" /TR "\"G:\vscode\codes\dropship-agents\.venv\Scripts\python.exe\" -m dropship --config \"G:\vscode\codes\dropship-agents\config.toml\" run"
 ```
 
 The task needs `KEEPA_API_KEY` (and `ANTHROPIC_API_KEY`) available to it, for example as user
