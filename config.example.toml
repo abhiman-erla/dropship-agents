@@ -2,10 +2,11 @@
 data_source = "canopy"       # "canopy" (free tier, no history) or "keepa"
 canopy_domain = "US"
 categories = ["bestsellers_kitchen"]   # Canopy category ids (strings); Keepa uses integer ids
-# Keepa alternative (needs KEEPA_API_KEY):
+# Keepa alternative (needs KEEPA_API_KEY); replace the matching keys, TOML forbids duplicates:
 # data_source = "keepa"
 # keepa_domain = 1           # 1 = amazon.com, 10 = amazon.in
 # categories = [1055398]
+# max_sales_rank = 50000     # Keepa ranks are category-wide sales ranks, not list positions
 price_min = 15.0
 price_max = 60.0
 max_sales_rank = 50          # for Canopy, the best-seller list position is the rank

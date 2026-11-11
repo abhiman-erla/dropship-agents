@@ -13,8 +13,10 @@ pip install -e .
 copy config.example.toml config.toml
 ```
 
-Edit `config.toml` and set `categories` (Canopy category id strings such as `"bestsellers_kitchen"`, or Keepa integer ids; required). Relative paths in the
-config (database, reports, supplier quotes) are resolved against the config file's folder.
+Edit `config.toml` and set `categories` (required): Canopy category id strings such as
+`"bestsellers_kitchen"`, or Keepa integer ids when `data_source = "keepa"`. Mixing them up is a
+config error. Relative paths in the config (database, reports, supplier quotes) are resolved
+against the config file's folder.
 
 Environment variables (secrets are never stored in the DB, reports or logs):
 
@@ -35,6 +37,15 @@ Demo limits: Canopy best-sellers gives no price or rank history and no seller (o
 skipped). The best-seller list position is used as the sales rank (`max_sales_rank = 50`). Set
 `data_source = "keepa"` for history and offer counts.
 
+Because of this, the risk score excludes price volatility, rank volatility and competition: they
+count as 0 and are marked unknown (the proposal narrative ends with
+`[risk excludes: ... - no data]`). With the default thresholds almost every promising product
+will pass the risk gate, so the score is not a safety check here. Judge each proposal's narrative
+and cost source (quoted or estimated) yourself before approving.
+
+If a category returns no products (for example a wrong category id), the run is marked degraded
+and the report names the category under Errors and Dropped products.
+
 ## What the agents do
 
 **Research** pulls candidate products in your categories from the data source, filters them by price, rank,
@@ -42,8 +53,8 @@ rating, reviews and offer count, and estimates margin from your supplier quotes 
 `est_cost_ratio` fallback). A cheap LLM pass then judges the top candidates.
 
 **Risk** takes the candidates the LLM rated promising (or, if research ran without the LLM,
-the top `llm_top_n` by score) and scores them for risk (price volatility, competition,
-demand). An LLM adds a short narrative and a suggested quantity, which is capped by
+the top `llm_top_n` by score, skipping ASINs that already have a pending or recently decided
+proposal) and scores them for risk (price volatility, competition, demand). An LLM adds a short narrative and a suggested quantity, which is capped by
 `max_units_per_order` and `max_order_value`. Candidates under `max_risk_score` become proposals.
 
 **Monitor** runs both stages with retries, records each stage's status, writes the daily Markdown
@@ -74,8 +85,9 @@ Exit codes: 0 success, 1 failed run or rejected approval, 2 configuration or mis
 schtasks /Create /SC DAILY /ST 08:00 /TN "dropship-run" /TR "\"G:\vscode\codes\dropship-agents\.venv\Scripts\python.exe\" -m dropship --config \"G:\vscode\codes\dropship-agents\config.toml\" run"
 ```
 
-The task needs `KEEPA_API_KEY` (and `ANTHROPIC_API_KEY`) available to it, for example as user
-environment variables set via `setx`. Check it with `schtasks /Run /TN "dropship-run"`.
+The task needs `CANOPY_API_KEY` (or `KEEPA_API_KEY` when `data_source = "keepa"`) and
+`ANTHROPIC_API_KEY` available to it, for example as user environment variables set via `setx`.
+Check it with `schtasks /Run /TN "dropship-run"`.
 
 ## Tests
 

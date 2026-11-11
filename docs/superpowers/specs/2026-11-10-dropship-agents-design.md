@@ -11,7 +11,7 @@ A scheduled Python pipeline with three agents that (1) find Amazon best-sellers 
 
 | Topic | Decision |
 |---|---|
-| Product data | **Keepa API** — no scraping of Amazon pages |
+| Product data | **Canopy API** best-sellers (default, US demo, `CANOPY_API_KEY`) or **Keepa API** (`KEEPA_API_KEY`) — no scraping of Amazon pages |
 | Purchasing | **Human approves every order.** The agent drafts; nothing is bought without `dropship approve <id>` |
 | Marketplace / sales channel | **Not decided.** Marketplace is a config value (Keepa domain id); the selling side and the supplier integration are pluggable and out of scope here |
 | Stack | **Python + Claude API.** Plain code does data fetching and math; Claude is called only where judgment is needed |
@@ -48,7 +48,7 @@ A scheduled Python pipeline with three agents that (1) find Amazon best-sellers 
 ## Interfaces
 
 - CLI: `dropship run`, `dropship proposals`, `dropship approve <id>`, `dropship reject <id>`, `dropship report [--run <id>]`.
-- Config: `config.toml` (thresholds, categories, domain) + env vars `KEEPA_API_KEY`, `ANTHROPIC_API_KEY` (or an `ant auth login` profile), `ALERT_WEBHOOK_URL` (optional).
+- Config: `config.toml` (thresholds, categories, domain) + env vars `CANOPY_API_KEY` (when `data_source = "canopy"`, the default) or `KEEPA_API_KEY` (when `data_source = "keepa"`), `ANTHROPIC_API_KEY` (or an `ant auth login` profile), `ALERT_WEBHOOK_URL` (optional).
 - Storage: one SQLite file, `data/dropship.db`.
 - Schedule: Windows Task Scheduler runs `dropship run` daily.
 
