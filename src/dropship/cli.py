@@ -14,7 +14,7 @@ from dropship.buyer import ApprovalError, RecordOnlyPurchaser, approve, reject
 from dropship.config import ConfigError, Settings, load_config
 from dropship.keepa_client import KeepaClient
 from dropship.llm import LLM
-from dropship.monitor import run_pipeline, write_report
+from dropship.monitor import proposal_details, run_pipeline, write_report
 
 
 def resolve_paths(s: Settings, config_path: Path) -> Settings:
@@ -58,6 +58,9 @@ def _cmd_proposals(conn: sqlite3.Connection, s: Settings, args: argparse.Namespa
     for p in proposals:
         print(f"#{p.id}  {p.asin}  qty={p.qty}  total={p.total:.2f}  "
               f"risk={p.risk_score}  {p.status}")
+        title, cost = proposal_details(conn, p)
+        print(f"    {title}  unit={p.unit_cost:.2f} ({cost})")
+        print(f"    {' '.join(p.narrative.split())}")
     return 0
 
 

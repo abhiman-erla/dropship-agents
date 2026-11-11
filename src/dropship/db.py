@@ -139,6 +139,16 @@ def get_candidates(conn: sqlite3.Connection, run_id: int) -> list[Candidate]:
     return [Candidate(**dict(r)) for r in rows]
 
 
+def get_candidate(conn: sqlite3.Connection, run_id: int, asin: str) -> Candidate | None:
+    row = conn.execute(
+        "SELECT asin, title, sell_price, supplier_cost, cost_source, margin, margin_pct,"
+        " score, llm_verdict, llm_reason FROM candidates WHERE run_id = ? AND asin = ?"
+        " ORDER BY id LIMIT 1",
+        (run_id, asin),
+    ).fetchone()
+    return Candidate(**dict(row)) if row else None
+
+
 _PROPOSAL_COLS = "id, run_id, asin, qty, unit_cost, total, risk_score, narrative, status"
 
 

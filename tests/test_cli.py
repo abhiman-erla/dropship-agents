@@ -186,3 +186,40 @@ def test_llm_factory_returns_llm_with_api_key(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     conn = db.connect(tmp_path / "t.db")
     assert cli.make_llm_factory(conn, Settings(categories=[1]))(1) is not None
+
+
+def _seed_with_candidate(tmp_path, cost_source="quoted", candidate=True):
+    from dropship.models import Candidate
+
+    conn = db.connect(tmp_path / "data" / "dropship.db")
+    run_id = db.start_run(conn)
+    if candidate:
+        db.save_candidates(conn, run_id, [Candidate(
+            asin="B0TESTASIN", title="Steel water bottle", sell_price=999.0,
+            supplier_cost=411.5, cost_source=cost_source, margin=300.0, margin_pct=0.3,
+            score=1.0)])
+    db.insert_proposal(conn, Proposal(
+        id=None, run_id=run_id, asin="B0TESTASIN", qty=3, unit_cost=411.5, total=1234.5,
+        risk_score=22, narrative="Low competition; try three.", status="pending"))
+    conn.close()
+
+
+def test_proposals_shows_title_cost_and_narrative(tmp_path, capsys):
+    _seed_with_candidate(tmp_path)
+    assert cli.main(["--config", str(_write_cfg(tmp_path)), "proposals"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0] == "#1  B0TESTASIN  qty=3  total=1234.50  risk=22  pending"
+    assert lines[1] == "    Steel water bottle  unit=411.50 (quoted)"
+    assert lines[2] == "    Low competition; try three."
+
+
+def test_proposals_flags_estimated_cost(tmp_path, capsys):
+    _seed_with_candidate(tmp_path, cost_source="estimated")
+    assert cli.main(["--config", str(_write_cfg(tmp_path)), "proposals"]) == 0
+    assert "unit=411.50 (estimated cost)" in capsys.readouterr().out
+
+
+def test_proposals_without_candidate_shows_unknown(tmp_path, capsys):
+    _seed_with_candidate(tmp_path, candidate=False)
+    assert cli.main(["--config", str(_write_cfg(tmp_path)), "proposals"]) == 0
+    assert capsys.readouterr().out.splitlines()[1] == "    ?  unit=411.50 (unknown)"

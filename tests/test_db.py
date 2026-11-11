@@ -104,3 +104,13 @@ def test_latest_run_id(tmp_path):
     db.start_run(conn)
     second = db.start_run(conn)
     assert db.latest_run_id(conn) == second
+
+
+def test_get_candidate(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    r1 = db.start_run(conn)
+    r2 = db.start_run(conn)
+    db.save_candidates(conn, r1, [_cand("B01", 0.9), _cand("B02", 0.5)])
+    assert db.get_candidate(conn, r1, "B02") == _cand("B02", 0.5)
+    assert db.get_candidate(conn, r1, "B99") is None
+    assert db.get_candidate(conn, r2, "B01") is None

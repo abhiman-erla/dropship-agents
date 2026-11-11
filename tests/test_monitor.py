@@ -237,3 +237,27 @@ def test_alert_swallows_http_error_without_leaking_url(tmp_path, caplog):
     with caplog.at_level("WARNING"):
         assert maybe_alert("failed", rp, "http://secret-hook/abc", c) is False
     assert "secret-hook" not in caplog.text
+
+
+def test_report_proposals_show_title_cost_and_narrative(tmp_path):
+    s = _settings(tmp_path)
+    conn = connect(s.db_path)
+    run_id = _seed_run(conn)
+    save_candidates(conn, run_id, [Candidate(
+        asin="B02", title="Guess-priced lamp", sell_price=1000.0, supplier_cost=350.0,
+        cost_source="estimated", margin=400.0, margin_pct=0.4, score=0.5,
+    )])
+    insert_proposal(conn, Proposal(
+        id=None, run_id=run_id, asin="B02", qty=2, unit_cost=350.0, total=700.0,
+        risk_score=30, narrative="Volatile price.", status="pending",
+    ))
+    insert_proposal(conn, Proposal(
+        id=None, run_id=run_id, asin="B03", qty=1, unit_cost=50.0, total=50.0,
+        risk_score=5, narrative="orphan", status="pending",
+    ))
+    text = write_report(conn, run_id, s).read_text(encoding="utf-8")
+    section = text.split("## Proposals awaiting approval")[1].split("## Errors")[0]
+    assert "Item" in section and "unit 1200.00 (quoted)" in section
+    assert "Guess-priced lamp" in section and "unit 350.00 (estimated cost)" in section
+    assert "Volatile price." in section
+    assert "? - unit 50.00 (unknown)" in section and "orphan" in section

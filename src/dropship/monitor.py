@@ -15,6 +15,7 @@ from dropship.buyer import run_risk
 from dropship.config import Settings
 from dropship.db import (
     finish_run,
+    get_candidate,
     get_candidates,
     get_run,
     get_stage_runs,
@@ -26,7 +27,7 @@ from dropship.db import (
 )
 from dropship.keepa_client import KeepaClient, KeepaError, KeepaOutOfTokens
 from dropship.llm import LLM
-from dropship.models import Product, StageResult
+from dropship.models import Product, Proposal, StageResult
 from dropship.research import run_research
 
 log = logging.getLogger(__name__)
@@ -134,6 +135,17 @@ def run_pipeline(
     return run_id
 
 
+_COST_LABELS = {"quoted": "quoted", "estimated": "estimated cost"}
+
+
+def proposal_details(conn: sqlite3.Connection, p: Proposal) -> tuple[str, str]:
+    """Title and cost-source label for a proposal, from its run's candidate row."""
+    c = get_candidate(conn, p.run_id, p.asin)
+    if c is None:
+        return "?", "unknown"
+    return c.title, _COST_LABELS.get(c.cost_source, c.cost_source)
+
+
 def write_report(conn: sqlite3.Connection, run_id: int, s: Settings) -> Path:
     run = get_run(conn, run_id)
     stages = get_stage_runs(conn, run_id)
@@ -190,10 +202,14 @@ def write_report(conn: sqlite3.Connection, run_id: int, s: Settings) -> Path:
     pending = list_proposals(conn, "pending")
     if pending:
         for p in pending:
+            title, cost = proposal_details(conn, p)
+            narrative = " ".join(p.narrative.split())
             lines.append(
                 f"- #{p.id} {p.asin} x{p.qty} total {p.total:.2f} risk {p.risk_score}"
                 f" - `dropship approve {p.id}`"
             )
+            lines.append(f"  - {title} - unit {p.unit_cost:.2f} ({cost})")
+            lines.append(f"  - {narrative}")
     else:
         lines.append("None.")
     lines.append("")
