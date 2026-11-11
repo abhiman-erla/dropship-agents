@@ -80,6 +80,16 @@ Other commands: `python -m dropship run` (run the pipeline now), `python -m drop
 Global option: `--config PATH` (default `config.toml`).
 Exit codes: 0 success, 1 failed run or rejected approval, 2 configuration or missing-key error.
 
+## Dashboard
+
+A view-only local dashboard of runs, proposals and spend. Start it with:
+
+    .venv\Scripts\python -m dropship web
+
+then open http://localhost:8000 (`--port N` to change; Ctrl+C to stop). It reads the database
+read-only, serves on 127.0.0.1 only, and refreshes every 30 seconds. It has no buttons:
+approving and rejecting stay in PowerShell (the pages show the commands to copy).
+
 ## Scheduling (Windows Task Scheduler)
 
 Replace `C:\path\to\dropship-agents` with the folder you cloned the repo into:

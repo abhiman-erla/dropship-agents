@@ -281,3 +281,51 @@ def test_main_silences_httpx_info_logging(tmp_path):
     logging.getLogger("httpx").setLevel(logging.NOTSET)
     cli.main(["--config", str(_write_cfg(tmp_path)), "proposals"])
     assert logging.getLogger("httpx").level == logging.WARNING
+
+
+def test_web_bad_config_exits_2(tmp_path, capsys):
+    assert cli.main(["--config", str(tmp_path / "nope.toml"), "web"]) == 2
+    assert "config error" in capsys.readouterr().err
+
+
+def test_web_port_in_use_exits_1(tmp_path, capsys):
+    import socket
+    cfg = _write_cfg(tmp_path)
+    holder = socket.socket()
+    try:
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            holder.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        holder.bind(("127.0.0.1", 0))
+        holder.listen()
+        port = holder.getsockname()[1]
+        assert cli.main(["--config", str(cfg), "web", "--port", str(port)]) == 1
+    finally:
+        holder.close()
+    assert "is busy" in capsys.readouterr().err
+
+
+def test_web_serves_on_localhost_only(tmp_path, capsys):
+    import socket
+    from fastapi import FastAPI
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    calls = []
+    s = cli.resolve_paths(Settings(categories=["x"]), tmp_path / "config.toml")
+    assert cli._cmd_web(s, port, serve=lambda app, host, p: calls.append((app, host, p))) == 0
+    assert len(calls) == 1
+    app, host, p = calls[0]
+    assert (host, p) == ("127.0.0.1", port)
+    assert isinstance(app, FastAPI)
+    assert f"Dashboard: http://localhost:{port}" in capsys.readouterr().out
+
+
+def test_web_does_not_create_db(tmp_path, monkeypatch):
+    import socket
+    cfg = _write_cfg(tmp_path)
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    monkeypatch.setattr(cli, "_serve", lambda app, host, p: None)
+    assert cli.main(["--config", str(cfg), "web", "--port", str(port)]) == 0
+    assert not (tmp_path / "data" / "dropship.db").exists()

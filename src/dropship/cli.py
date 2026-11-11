@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import socket
 import sqlite3
 import sys
 from collections.abc import Callable
@@ -98,6 +99,36 @@ def _cmd_report(conn: sqlite3.Connection, s: Settings, args: argparse.Namespace)
     return 0
 
 
+def _serve(app, host: str, port: int) -> None:
+    import uvicorn  # lazy: other commands don't pay the import cost
+
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+def _port_is_free(port: int) -> bool:
+    sock = socket.socket()
+    try:
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):  # Windows: detect held ports reliably
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        sock.bind(("127.0.0.1", port))
+    except OSError:
+        return False
+    finally:
+        sock.close()
+    return True
+
+
+def _cmd_web(s: Settings, port: int, serve: Callable | None = None) -> int:
+    from dropship.web.app import create_app
+
+    if not _port_is_free(port):
+        print(f"port {port} is busy, try --port {port + 1}", file=sys.stderr)
+        return 1
+    print(f"Dashboard: http://localhost:{port}  (Ctrl+C to stop)")
+    (serve or _serve)(create_app(s), "127.0.0.1", port)
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dropship")
     parser.add_argument("--config", type=Path, default=Path("config.toml"),
@@ -112,6 +143,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("id", type=int)
     p = sub.add_parser("report", help="(re)write a run's report and print its path")
     p.add_argument("--run", type=int, help="run id (default: latest)")
+    p = sub.add_parser("web", help="serve the view-only dashboard on 127.0.0.1")
+    p.add_argument("--port", type=int, default=8000, help="port (default: 8000)")
     return parser
 
 
@@ -137,6 +170,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{key_name} is not set; export it before running `dropship run`.",
                   file=sys.stderr)
             return 2
+    if args.command == "web":
+        return _cmd_web(s, args.port, None)
     conn = db.connect(s.db_path)
     try:
         return _COMMANDS[args.command](conn, s, args)
