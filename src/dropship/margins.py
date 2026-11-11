@@ -101,7 +101,9 @@ def explain_drops(
         if margin_pct < s.min_margin_pct:
             out.append(
                 (p.asin, p.title,
-                 f"margin {margin_pct:.1%} below min {s.min_margin_pct:.1%}")
+                 # round the margin down so it never displays as >= the minimum
+                 f"margin {math.floor(margin_pct * 1000) / 10:.1f}% below min "
+                 f"{s.min_margin_pct:.1%}")
             )
     return out
 

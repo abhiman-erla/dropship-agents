@@ -171,3 +171,10 @@ def test_margin_reason_has_one_decimal(s):
     s = s.model_copy(update={"min_margin_pct": 0.395})
     drops = explain_drops([make_product(asin="T", title="Thin")], {"T": 400.0}, s)
     assert drops[0][2] == "margin 39.0% below min 39.5%"
+
+
+def test_margin_reason_never_rounds_up_to_the_minimum(s):
+    from dropship.margins import explain_drops
+    # price 1000, fee 150, ship 60, cost 540.4 -> margin 249.6 = 24.96% (< 25%)
+    drops = explain_drops([make_product(asin="E", title="Edge")], {"E": 540.4}, s)
+    assert drops[0][2] == "margin 24.9% below min 25.0%"
