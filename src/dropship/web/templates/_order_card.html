@@ -4,7 +4,7 @@
      · risk {{ o.risk_score }}
      · <span class="{{ 'cost-quoted' if o.cost_label == 'quoted' else 'cost-estimated' }}">{{ o.cost_label }}</span></p>
   {% if o.narrative %}<p class="notes">{{ o.narrative }}</p>{% endif %}
-  <p class="muted small">created {{ o.created_at }}{% if o.decided_at %} · decided {{ o.decided_at }}{% endif %}</p>
+  <p class="muted small">created {{ o.created_at|when }}{% if o.decided_at %} · decided {{ o.decided_at|when }}{% endif %}</p>
   {% if o.status == 'pending' %}
   <p class="cmds"><code>.venv\Scripts\python -m dropship approve {{ o.id }}</code>
      <code>.venv\Scripts\python -m dropship reject {{ o.id }}</code></p>

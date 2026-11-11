@@ -19,10 +19,22 @@ _ORDER_TABS = [("pending", "Pending"), ("approved_manual", "Approved"),
                ("rejected", "Rejected")]
 
 
+def when(value: str | None) -> str:
+    """Jinja filter: ISO timestamp -> "Nov 11, 12:34"; empty -> "—"; unparseable -> as is."""
+    if not value:
+        return "—"
+    try:
+        return datetime.fromisoformat(value).strftime("%b %d, %H:%M")
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="dropship dashboard", docs_url=None, redoc_url=None,
                   openapi_url=None)
     templates = Jinja2Templates(directory=_HERE / "templates")
+    templates.env.filters["when"] = when
+    templates.env.globals["amazon_url"] = queries.amazon_url
     app.mount("/static", StaticFiles(directory=_HERE / "static"), name="static")
 
     def render(request: Request, name: str, status: int = 200, **ctx) -> HTMLResponse:
@@ -73,7 +85,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     def run_page(request: Request, run_id: str, reason: str = ""):
-        if not run_id.isdecimal():
+        if not run_id.isdecimal() or len(run_id) > 18:  # > 18 digits overflows SQLite
             return not_found(request)
 
         def build(c):

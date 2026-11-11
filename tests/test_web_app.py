@@ -154,3 +154,123 @@ def test_refresh_meta_present(client):
     assert 'http-equiv="refresh" content="30"' in text
     assert "last updated" in text and "/static/style.css" in text
     assert client.get("/static/style.css").status_code == 200
+
+
+def _set_run_start(s, run_id=1, started="2026-11-11T12:34:56.789012"):
+    conn = db.connect(s.db_path)
+    conn.execute("UPDATE runs SET started_at = ? WHERE id = ?", (started, run_id))
+    conn.commit()
+    conn.close()
+
+
+def test_when_filter():
+    from dropship.web.app import when
+    assert when("2026-11-11T12:34:56.789012") == "Nov 11, 12:34"
+    assert when("2026-01-05T09:07:00") == "Jan 05, 09:07"
+    assert when(None) == "—"
+    assert when("") == "—"
+    assert when("not a time") == "not a time"
+
+
+def test_timestamps_are_readable(tmp_path):
+    s = _settings(tmp_path)
+    _seed(s)
+    _set_run_start(s)
+    conn = db.connect(s.db_path)
+    conn.execute("UPDATE proposals SET created_at = '2026-11-11T12:40:00',"
+                 " decided_at = '2026-11-11T13:05:00' WHERE asin = 'A2'")
+    conn.commit()
+    conn.close()
+    c = TestClient(create_app(s))
+    for path in ("/", "/runs", "/runs/1"):
+        text = c.get(path).text
+        assert "Nov 11, 12:34" in text, path
+        assert "2026-11-11T12:34" not in text, path
+    rejected = c.get("/orders?status=rejected").text
+    assert "created Nov 11, 12:40 · decided Nov 11, 13:05" in rejected
+
+
+def test_products_last_seen_shows_run_and_date(tmp_path):
+    s = _settings(tmp_path)
+    _seed(s)
+    _set_run_start(s)
+    assert "#1 · Nov 11, 12:34" in TestClient(create_app(s)).get("/products").text
+
+
+def test_requests_hint_before_any_counted_request(client):
+    assert "counting starts with your next run" in client.get("/").text
+
+
+def test_requests_hint_counted_since(tmp_path):
+    s = _settings(tmp_path)
+    _seed(s)
+    conn = db.connect(s.db_path)
+    db.record_source_requests(conn, 1, "canopy", 4)
+    conn.execute("UPDATE source_requests SET created_at = '2026-11-02T08:15:00'")
+    conn.commit()
+    conn.close()
+    text = TestClient(create_app(s)).get("/").text
+    assert "counted since Nov 02, 08:15" in text
+    assert "counting starts with your next run" not in text
+
+
+@pytest.mark.parametrize("digits", [23, 5000])
+def test_oversized_run_id_is_404(client, digits):
+    r = client.get("/runs/" + "1" * digits)
+    assert r.status_code == 404 and "Not found" in r.text
+
+
+def test_settings_freshness_note(client):
+    assert ("Edit config.toml / supplier_quotes.csv to change these, then restart dropship"
+            " web (quotes refresh automatically).") in client.get("/settings").text
+
+
+def test_dropped_asins_link_to_amazon(client):
+    assert 'href="https://www.amazon.com/dp/D1"' in client.get("/runs/1").text
+
+
+def test_templates_build_no_amazon_urls_inline():
+    from pathlib import Path
+    from dropship.web import app as app_module
+    for tpl in (Path(app_module.__file__).parent / "templates").glob("*.html"):
+        assert "amazon.com" not in tpl.read_text(encoding="utf-8"), tpl.name
+
+
+def test_busy_page_topbar_matches_its_refresh(client, monkeypatch):
+    def boom(*a, **k):
+        raise sqlite3.OperationalError("database is locked")
+    monkeypatch.setattr(queries, "dashboard", boom)
+    text = client.get("/").text
+    assert "auto-refresh 30s" not in text and "auto-refresh 3s" in text
+    assert "auto-refresh 30s" in client.get("/runs").text
+
+
+def test_reason_filter_links(tmp_path):
+    s = _settings(tmp_path)
+    conn = db.connect(s.db_path)
+    run = db.start_run(conn)
+    db.record_dropped(conn, run, [
+        ("D1", "t", "research", "blocked brand: Acme"),
+        ("D2", "t", "research", "blocked brand: Zed"),
+        ("D3", "t", "research", "blocked brand: Acme"),
+        ("D4", "t", "research", "missing price"),
+    ])
+    conn.close()
+    c = TestClient(create_app(s))
+    text = c.get(f"/runs/{run}").text
+    assert 'href="?reason=blocked%20brand"' in text
+    assert "blocked brand (3)" in text and "missing price (1)" in text
+    assert text.index("blocked brand (3)") < text.index("missing price (1)")
+    assert f'href="/runs/{run}"' in text and ">all</a>" in text
+    filtered = c.get(f"/runs/{run}?reason=missing%20price").text
+    assert "D4" in filtered and "D1" not in filtered
+    assert "<form" not in filtered.lower()
+
+
+def test_tables_are_wrapped_and_css_prevents_overflow(client):
+    for path in PAGES:
+        text = client.get(path).text
+        assert text.count("<table") == text.count('<div class="table-wrap"><table'), path
+    css = client.get("/static/style.css").text
+    assert "overflow-wrap:anywhere" in css and ".table-wrap { overflow-x:auto" in css
+    assert "white-space:pre-wrap; word-break:break-all" in css

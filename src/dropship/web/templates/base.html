@@ -16,7 +16,7 @@
     <a href="/products" class="{{ 'on' if active == 'products' }}">Products</a>
     <a href="/settings" class="{{ 'on' if active == 'settings' }}">Settings</a>
   </nav>
-  <span class="muted small">last updated {{ updated }} · auto-refresh 30s</span>
+  <span class="muted small">last updated {{ updated }} · auto-refresh {{ self.refresh() }}s</span>
 </header>
 <main class="container">
 {% block content %}{% endblock %}

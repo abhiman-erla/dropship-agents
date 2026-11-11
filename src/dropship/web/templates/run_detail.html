@@ -3,31 +3,35 @@
 {% block content %}
 {% set s = r.summary %}
 <h1>Run #{{ s.id }} <span class="badge {{ s.status }}">{{ s.status }}</span></h1>
-<p class="muted">started {{ s.started_at }}{% if s.duration_s is not none %} · took {{ '%.1f'|format(s.duration_s) }}s{% endif %}
+<p class="muted">started {{ s.started_at|when }}{% if s.duration_s is not none %} · took {{ '%.1f'|format(s.duration_s) }}s{% endif %}
  · {{ s.fetched }} fetched · {{ s.dropped }} dropped · {{ s.proposed }} proposals · {{ '{:,}'.format(r.tokens) }} Claude tokens</p>
 <h2>Stages</h2>
-<table>
+<div class="table-wrap"><table>
   <tr><th>Stage</th><th>Status</th><th>Attempts</th><th>Error type</th><th>Message</th></tr>
   {% for st in r.stages %}
   <tr><td>{{ st.stage }}</td><td><span class="badge {{ st.status }}">{{ st.status }}</span></td><td>{{ st.attempts }}</td><td>{{ st.error_type }}</td><td>{{ st.message }}</td></tr>
   {% else %}<tr><td colspan="5" class="muted">No stages recorded.</td></tr>{% endfor %}
-</table>
+</table></div>
 <h2>Top candidates</h2>
-<table>
+<div class="table-wrap"><table>
   <tr><th>ASIN</th><th>Title</th><th>Price</th><th>Margin</th><th>Cost</th><th>Score</th><th>AI verdict</th></tr>
   {% for c in r.candidates %}
-  <tr><td><a href="https://www.amazon.com/dp/{{ c.asin }}" target="_blank" rel="noopener">{{ c.asin }}</a></td><td>{{ c.title }}</td>
+  <tr><td><a href="{{ amazon_url(c.asin) }}" target="_blank" rel="noopener">{{ c.asin }}</a></td><td>{{ c.title }}</td>
       <td>${{ '%.2f'|format(c.sell_price) }}</td><td>{{ '%.0f'|format(c.margin_pct * 100) }}%</td>
       <td><span class="{{ 'cost-quoted' if c.cost_source == 'quoted' else 'cost-estimated' }}">{{ c.cost_source }}</span></td>
       <td>{{ '%.2f'|format(c.score) }}</td><td>{{ c.llm_verdict }}</td></tr>
   {% else %}<tr><td colspan="7" class="muted">No candidates.</td></tr>{% endfor %}
-</table>
+</table></div>
 <h2>Dropped products</h2>
-<p class="small muted">Filter by reason by adding <code>?reason=text</code> to the address.{% if reason %} Showing reasons containing <strong>{{ reason }}</strong> · <a href="/runs/{{ s.id }}">clear</a>{% endif %}</p>
-<table>
+{% if r.reason_counts %}
+<p class="filters small">Filter: <a href="/runs/{{ s.id }}" class="{{ 'on' if not reason }}">all</a>
+  {%- for cat, n in r.reason_counts %} <a href="?reason={{ cat|urlencode }}" class="{{ 'on' if reason == cat }}">{{ cat }} ({{ n }})</a>{% endfor %}</p>
+{% endif %}
+<p class="small muted">Or add <code>?reason=text</code> to the address.{% if reason %} Showing reasons containing <strong>{{ reason }}</strong> · <a href="/runs/{{ s.id }}">clear</a>{% endif %}</p>
+<div class="table-wrap"><table>
   <tr><th>ASIN</th><th>Title</th><th>Stage</th><th>Reason</th></tr>
   {% for d in r.dropped %}
-  <tr><td>{{ d.asin }}</td><td>{{ d.title }}</td><td>{{ d.stage }}</td><td>{{ d.reason }}</td></tr>
+  <tr><td>{% if d.asin != '-' %}<a href="{{ amazon_url(d.asin) }}" target="_blank" rel="noopener">{{ d.asin }}</a>{% else %}-{% endif %}</td><td>{{ d.title }}</td><td>{{ d.stage }}</td><td>{{ d.reason }}</td></tr>
   {% else %}<tr><td colspan="4" class="muted">None.</td></tr>{% endfor %}
-</table>
+</table></div>
 {% endblock %}
