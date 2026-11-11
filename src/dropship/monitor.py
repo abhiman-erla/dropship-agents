@@ -34,7 +34,8 @@ log = logging.getLogger(__name__)
 
 TRANSIENT = (
     httpx.TimeoutException,
-    httpx.ConnectError,
+    httpx.NetworkError,  # ConnectError, ReadError, WriteError, CloseError
+    httpx.RemoteProtocolError,
     anthropic.RateLimitError,
     anthropic.APIConnectionError,
     anthropic.InternalServerError,
@@ -131,7 +132,9 @@ def run_pipeline(
     )
     finish_run(conn, run_id, status)
     path = write_report(conn, run_id, s)
-    maybe_alert(status, path, os.environ.get("ALERT_WEBHOOK_URL"))
+    maybe_alert(
+        status, path, os.environ.get("ALERT_WEBHOOK_URL"), stages=get_stage_runs(conn, run_id)
+    )
     return run_id
 
 
@@ -231,20 +234,32 @@ def write_report(conn: sqlite3.Connection, run_id: int, s: Settings) -> Path:
     return path
 
 
+_ALERT_STAGE_KEYS = ("stage", "status", "error_type", "message")
+
+
 def maybe_alert(
     run_status: str,
     report_path: Path,
     webhook_url: str | None,
     http: httpx.Client | None = None,
+    stages: list[dict] | None = None,
 ) -> bool:
     if run_status not in ("failed", "degraded") or not webhook_url:
         return False
     summary = Path(report_path).read_text(encoding="utf-8")[:1500]
-    payload = {"status": run_status, "report": str(report_path), "summary": summary}
-    client = http or httpx.Client(timeout=10)
+    payload = {
+        "status": run_status,
+        "report": str(report_path),
+        "summary": summary,
+        "stages": [{k: st[k] for k in _ALERT_STAGE_KEYS} for st in stages or []],
+    }
     try:
-        resp = client.post(webhook_url, json=payload)
-    except httpx.HTTPError as exc:
+        if http is None:
+            with httpx.Client(timeout=10) as client:
+                resp = client.post(webhook_url, json=payload)
+        else:
+            resp = http.post(webhook_url, json=payload)
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:  # UnsupportedProtocol is an HTTPError
         log.warning("alert webhook failed: %s", type(exc).__name__)
         return False
     if not resp.is_success:

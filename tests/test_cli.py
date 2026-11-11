@@ -223,3 +223,11 @@ def test_proposals_without_candidate_shows_unknown(tmp_path, capsys):
     _seed_with_candidate(tmp_path, candidate=False)
     assert cli.main(["--config", str(_write_cfg(tmp_path)), "proposals"]) == 0
     assert capsys.readouterr().out.splitlines()[1] == "    ?  unit=411.50 (unknown)"
+
+
+def test_main_silences_httpx_info_logging(tmp_path):
+    import logging
+
+    logging.getLogger("httpx").setLevel(logging.NOTSET)
+    cli.main(["--config", str(_write_cfg(tmp_path)), "proposals"])
+    assert logging.getLogger("httpx").level == logging.WARNING

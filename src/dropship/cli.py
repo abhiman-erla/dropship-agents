@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sqlite3
 import sys
@@ -117,6 +118,8 @@ _COMMANDS = {
 
 
 def main(argv: list[str] | None = None) -> int:
+    # The Keepa key travels in the query string; httpx logs request URLs at INFO.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     args = _build_parser().parse_args(argv)
     try:
         s = resolve_paths(load_config(args.config), args.config)

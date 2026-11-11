@@ -1,6 +1,8 @@
+import json
 from datetime import datetime
 
 import httpx
+import pytest
 
 from dropship import monitor
 from dropship.config import Settings
@@ -220,9 +222,21 @@ def test_alert_only_on_bad_status(tmp_path):
     assert posts == []
     assert maybe_alert("degraded", rp, None, _client(200, posts)) is False
     assert posts == []
-    assert maybe_alert("degraded", rp, "http://hook", _client(200, posts)) is True
+    stages = [
+        {"stage": "research", "status": "degraded", "attempts": 1, "error_type": "NoLLM",
+         "message": "no LLM client configured", "started_at": "a", "finished_at": "b"},
+        {"stage": "risk", "status": "ok", "attempts": 1, "error_type": "", "message": "",
+         "started_at": "c", "finished_at": "d"},
+    ]
+    assert maybe_alert("degraded", rp, "http://hook", _client(200, posts), stages=stages) is True
     assert len(posts) == 1
-    assert b'"status"' in posts[0].content
+    body = json.loads(posts[0].content)
+    assert body["status"] == "degraded" and body["summary"] == "report"
+    assert body["stages"] == [
+        {"stage": "research", "status": "degraded", "error_type": "NoLLM",
+         "message": "no LLM client configured"},
+        {"stage": "risk", "status": "ok", "error_type": "", "message": ""},
+    ]
     assert maybe_alert("failed", rp, "http://hook", _client(500, [])) is False
 
 
@@ -261,3 +275,69 @@ def test_report_proposals_show_title_cost_and_narrative(tmp_path):
     assert "Guess-priced lamp" in section and "unit 350.00 (estimated cost)" in section
     assert "Volatile price." in section
     assert "? - unit 50.00 (unknown)" in section and "orphan" in section
+
+
+def test_alert_malformed_url_returns_false_and_closes_default_client(
+    tmp_path, monkeypatch, caplog
+):
+    rp = tmp_path / "r.md"
+    rp.write_text("report", encoding="utf-8")
+    made = []
+    real_client = httpx.Client
+
+    def fake_client(**kw):
+        c = real_client(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+        made.append(c)
+        return c
+
+    monkeypatch.setattr(monitor.httpx, "Client", fake_client)
+    with caplog.at_level("WARNING"):
+        # e.g. a trailing newline pasted into ALERT_WEBHOOK_URL
+        assert maybe_alert("failed", rp, "http://hook/secret\n") is False
+    assert "InvalidURL" in caplog.text and "secret" not in caplog.text
+    assert len(made) == 1 and made[0].is_closed
+
+
+def test_alert_unsupported_protocol_returns_false(tmp_path):
+    rp = tmp_path / "r.md"
+    rp.write_text("report", encoding="utf-8")
+
+    def handler(request):
+        raise httpx.UnsupportedProtocol("no ftp")
+
+    c = httpx.Client(transport=httpx.MockTransport(handler))
+    assert maybe_alert("failed", rp, "ftp://hook", c) is False
+
+
+def test_pipeline_alert_carries_stages(tmp_path, monkeypatch):
+    monkeypatch.setenv("ALERT_WEBHOOK_URL", "http://hook")
+    seen = {}
+
+    def fake_alert(status, path, url, http=None, stages=None):
+        seen.update(status=status, stages=stages)
+        return True
+
+    monkeypatch.setattr(monitor, "maybe_alert", fake_alert)
+    s = _settings(tmp_path)
+    run_pipeline(connect(s.db_path), s, BoomKeepa(), lambda rid: None, sleep=Sleeper())
+    assert seen["status"] == "failed"
+    assert [(st["stage"], st["status"]) for st in seen["stages"]] == [
+        ("research", "failed"), ("risk", "skipped")]
+    assert seen["stages"][0]["error_type"] == "ValueError"
+
+
+@pytest.mark.parametrize("exc", [
+    httpx.ReadError("reset"), httpx.WriteError("broken pipe"),
+    httpx.RemoteProtocolError("peer closed"), httpx.ReadTimeout("slow"),
+])
+def test_network_errors_are_transient(exc):
+    n = {"i": 0}
+
+    def fn():
+        n["i"] += 1
+        if n["i"] == 1:
+            raise exc
+        return _ok()
+
+    sl = Sleeper()
+    assert run_stage("research", fn, sl).status == "ok" and sl.calls == [2]
