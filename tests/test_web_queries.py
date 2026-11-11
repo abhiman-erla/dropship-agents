@@ -57,6 +57,35 @@ def test_open_readonly_rejects_writes(tmp_path):
         ro.execute("INSERT INTO runs (started_at, status) VALUES ('x', 'ok')")
 
 
+def test_open_readonly_survives_hash_in_path(tmp_path):
+    path = tmp_path / "proj#1" / "t.db"
+    path.parent.mkdir()
+    db.connect(path).close()
+    before = sorted(p.name for p in tmp_path.iterdir())
+    ro = q.open_readonly(path)
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            ro.execute("INSERT INTO runs (started_at, status) VALUES ('x', 'ok')")
+    finally:
+        ro.close()
+    assert sorted(p.name for p in tmp_path.iterdir()) == before
+
+
+def test_open_readonly_percent_folder_opens_that_file(tmp_path):
+    for folder, marker in (("a%20b", "percent"), ("a b", "space")):
+        (tmp_path / folder).mkdir()
+        conn = sqlite3.connect(tmp_path / folder / "t.db")
+        conn.execute("CREATE TABLE m (v TEXT)")
+        conn.execute("INSERT INTO m VALUES (?)", (marker,))
+        conn.commit()
+        conn.close()
+    ro = q.open_readonly(tmp_path / "a%20b" / "t.db")
+    try:
+        assert ro.execute("SELECT v FROM m").fetchone()[0] == "percent"
+    finally:
+        ro.close()
+
+
 def test_dashboard_tiles(tmp_path):
     s = _settings(tmp_path)
     conn = db.connect(s.db_path)

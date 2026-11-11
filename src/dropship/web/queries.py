@@ -27,7 +27,8 @@ def open_readonly(db_path: Path) -> sqlite3.Connection | None:
     path = Path(db_path)
     if not path.exists():
         return None
-    conn = sqlite3.connect(f"file:{path.resolve().as_posix()}?mode=ro", uri=True, timeout=5)
+    # as_uri() percent-encodes '#', '%' and spaces, so the ?mode=ro query always applies.
+    conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
     conn.row_factory = sqlite3.Row
     return conn
 
