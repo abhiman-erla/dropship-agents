@@ -178,3 +178,79 @@ def test_research_records_drops(conn, tmp_path):
     run_research(keepa, llm, conn, run_id, s)
     [d] = get_dropped(conn, run_id)
     assert d["asin"] == "B0C" and d["stage"] == "research" and d["reason"] == "missing price"
+
+
+def _decide(conn, run_id, asin, status="approved_manual"):
+    from dropship.db import insert_proposal, set_proposal_status
+    from dropship.models import Proposal
+    pid = insert_proposal(conn, Proposal(id=None, run_id=run_id, asin=asin, qty=1,
+                                         unit_cost=1.0, total=1.0, risk_score=1,
+                                         narrative="n", status="pending"))
+    if status != "pending":
+        set_proposal_status(conn, pid, status)
+
+
+def test_decided_and_pending_do_not_take_top_n_slots(conn, tmp_path):
+    ratings = {"B01": 4.9, "B02": 4.8, "B03": 4.7, "B04": 4.6, "B05": 4.5}
+    products = {a: prod(a, rating=r) for a, r in ratings.items()}
+    keepa = FakeKeepa({1: list(products)}, products)
+    run_id = start_run(conn)
+    _decide(conn, run_id, "B01")              # recently approved
+    _decide(conn, run_id, "B02", "pending")   # still awaiting a decision
+    client = FakeClient(Verdicts(items=[]))
+    s = settings(tmp_path, llm_top_n=2)
+    run_research(keepa, LLM(client, conn, run_id, s.daily_llm_token_budget), conn, run_id, s)
+    payload = json.loads(client.calls[0]["messages"][0]["content"])
+    assert [r["asin"] for r in payload] == ["B03", "B04"]
+    cands = {c.asin: c for c in get_candidates(conn, run_id)}
+    assert set(cands) == set(ratings)  # excluded ones are still saved
+    assert cands["B01"].llm_verdict == "unreviewed" and cands["B02"].llm_verdict == "unreviewed"
+
+
+def test_cooldown_off_keeps_decided_in_top_n(conn, tmp_path):
+    products = {a: prod(a, rating=r) for a, r in {"B01": 4.9, "B02": 4.8, "B03": 4.7}.items()}
+    keepa = FakeKeepa({1: list(products)}, products)
+    run_id = start_run(conn)
+    _decide(conn, run_id, "B01")
+    client = FakeClient(Verdicts(items=[]))
+    s = settings(tmp_path, llm_top_n=2, proposal_cooldown_days=0)
+    run_research(keepa, LLM(client, conn, run_id, s.daily_llm_token_budget), conn, run_id, s)
+    payload = json.loads(client.calls[0]["messages"][0]["content"])
+    assert [r["asin"] for r in payload] == ["B01", "B02"]
+
+
+def test_empty_category_degrades_and_records_drop(conn, tmp_path):
+    from dropship.db import get_dropped
+    keepa = FakeKeepa({1: [], 2: ["B0A"]}, {"B0A": prod("B0A")})
+    run_id = start_run(conn)
+    parsed = Verdicts(items=[Verdict(asin="B0A", verdict="promising", reason="ok")])
+    s = india(categories=[1, 2], supplier_quotes_path=tmp_path / "none.csv")
+    llm = LLM(FakeClient(parsed), conn, run_id, s.daily_llm_token_budget)
+    result, _ = run_research(keepa, llm, conn, run_id, s)
+    assert result.status == "degraded" and result.error_type == "EmptyCategory"
+    assert result.message == "category 1 returned 0 products"
+    assert get_dropped(conn, run_id) == [{"asin": "-", "title": "-", "stage": "research",
+                                          "reason": "category 1 returned 0 products"}]
+
+
+def test_several_empty_categories_joined(conn, tmp_path):
+    from dropship.db import get_dropped
+    keepa = FakeKeepa({1: [], 2: []}, {})
+    run_id = start_run(conn)
+    s = india(categories=[1, 2], supplier_quotes_path=tmp_path / "none.csv")
+    result, products = run_research(keepa, None, conn, run_id, s)
+    assert products == {} and keepa.requested == []
+    assert result.status == "degraded" and result.error_type == "EmptyCategory"
+    assert result.message == "category 1 returned 0 products; category 2 returned 0 products"
+    assert [d["reason"] for d in get_dropped(conn, run_id)] == [
+        "category 1 returned 0 products", "category 2 returned 0 products"]
+
+
+def test_empty_category_kept_alongside_llm_degradation(conn, tmp_path):
+    keepa = FakeKeepa({1: [], 2: ["B0A"]}, {"B0A": prod("B0A")})
+    run_id = start_run(conn)
+    s = india(categories=[1, 2], supplier_quotes_path=tmp_path / "none.csv")
+    result, _ = run_research(keepa, None, conn, run_id, s)
+    assert result.status == "degraded"
+    assert result.error_type == "EmptyCategory, NoLLM"
+    assert result.message == "category 1 returned 0 products; no LLM client configured"

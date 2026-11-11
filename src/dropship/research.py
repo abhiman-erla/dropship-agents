@@ -7,7 +7,12 @@ from typing import Literal
 from pydantic import BaseModel
 
 from dropship.config import Settings
-from dropship.db import record_dropped, save_candidates
+from dropship.db import (
+    has_pending_proposal,
+    recently_decided,
+    record_dropped,
+    save_candidates,
+)
 from dropship.llm import LLM, LLMBudgetExceeded, LLMUnusable
 from dropship.margins import build_candidates, explain_drops, load_supplier_quotes
 from dropship.models import Candidate, Product, StageResult
@@ -68,8 +73,12 @@ def run_research(
 ) -> tuple[StageResult, dict[str, Product]]:
     asins: list[str] = []
     seen: set[str] = set()
+    empty: list[str] = []
     for category in s.categories:
-        for asin in keepa.bestsellers(category)[: s.max_asins_per_category]:
+        listed = keepa.bestsellers(category)
+        if not listed:
+            empty.append(f"category {category} returned 0 products")
+        for asin in listed[: s.max_asins_per_category]:
             if asin not in seen:
                 seen.add(asin)
                 asins.append(asin)
@@ -78,13 +87,27 @@ def run_research(
 
     quotes = load_supplier_quotes(s.supplier_quotes_path)
     candidates = build_candidates(fetched, quotes, s)
-    top = candidates[: s.llm_top_n]
+    # Pending or recently decided ASINs stay as (unreviewed) candidates for the report,
+    # but must not take the LLM's top-N slots.
+    eligible = [
+        c for c in candidates
+        if not has_pending_proposal(conn, c.asin)
+        and not recently_decided(conn, c.asin, s.proposal_cooldown_days)
+    ]
+    top = eligible[: s.llm_top_n]
 
     status: Literal["ok", "degraded"] = "ok"
-    error_type = message = ""
+    error_types: list[str] = []
+    messages: list[str] = []
+    if empty:
+        status = "degraded"
+        error_types.append("EmptyCategory")
+        messages.append("; ".join(empty))
     if top:
         if llm is None:
-            status, error_type, message = "degraded", "NoLLM", "no LLM client configured"
+            status = "degraded"
+            error_types.append("NoLLM")
+            messages.append("no LLM client configured")
         else:
             try:
                 verdicts = llm.parse(
@@ -100,16 +123,20 @@ def run_research(
                     if v is not None:
                         c.llm_verdict, c.llm_reason = v.verdict, v.reason
             except (LLMBudgetExceeded, LLMUnusable) as e:
-                status, error_type, message = "degraded", type(e).__name__, str(e)
+                status = "degraded"
+                error_types.append(type(e).__name__)
+                messages.append(str(e))
 
     save_candidates(conn, run_id, candidates)
     record_dropped(
         conn, run_id,
-        [(a, t, "research", r) for a, t, r in explain_drops(fetched, quotes, s)],
+        [("-", "-", "research", reason) for reason in empty]
+        + [(a, t, "research", r) for a, t, r in explain_drops(fetched, quotes, s)],
     )
     return (
         StageResult(
-            stage="research", status=status, attempts=1, error_type=error_type, message=message
+            stage="research", status=status, attempts=1,
+            error_type=", ".join(error_types), message="; ".join(messages),
         ),
         products,
     )
